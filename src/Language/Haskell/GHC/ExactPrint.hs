@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE UndecidableInstances #-} -- Suspect GHC bug to need this.
 
 -----------------------------------------------------------------------------
 -- |
@@ -183,11 +184,11 @@ popSrcSpan :: EP ()
 popSrcSpan = EP (\l dp (_:sss) cs st an -> ((),l,dp,sss,cs,st,an,id))
 
 
-getAnnotation :: (Typeable a) => GHC.Located a -> EP (Maybe Annotation)
+getAnnotation :: (GenericCon a) => GHC.Located a -> EP (Maybe Annotation)
 getAnnotation a  = EP (\l dp s cs st an -> (getAnnotationEP (anEP an) a
                        ,l,dp,s,cs,st,an,id))
 
-getAndRemoveAnnotation :: (Typeable a) => GHC.Located a -> EP (Maybe Annotation)
+getAndRemoveAnnotation :: (GenericCon a) => GHC.Located a -> EP (Maybe Annotation)
 getAndRemoveAnnotation a = EP (\l dp s cs st (ane,anf) ->
   let
     (r,ane') = getAndRemoveAnnotationEP ane a
@@ -391,7 +392,7 @@ errorEP = fail
 
 -- | Print an AST exactly as specified by the annotations on the nodes in the tree.
 -- exactPrint :: (ExactP ast) => ast -> [Comment] -> String
-exactPrint :: (ExactP ast) => GHC.Located ast -> [Comment] -> [PosToken] -> String
+exactPrint :: (GenericCon ast,ExactP ast) => GHC.Located ast -> [Comment] -> [PosToken] -> String
 exactPrint ast@(GHC.L l _) cs toks = runEP (exactPC ast) l cs (Map.empty,Map.empty)
 
 
@@ -401,7 +402,7 @@ exactPrintAnnotated ast@(GHC.L l _) ghcAnns = runEP (loadInitialComments >> exac
   where
     ann = annotateLHsModule ast ghcAnns
 
-exactPrintAnnotation :: ExactP ast =>
+exactPrintAnnotation :: (GenericCon ast,ExactP ast) =>
   GHC.Located ast -> [Comment] -> Anns -> String
 exactPrintAnnotation ast@(GHC.L l _) cs ann = runEP (loadInitialComments >> exactPC ast) l cs ann
   -- `debug` ("exactPrintAnnotation:ann=" ++ (concatMap (\(l,a) -> show (ss2span l,a)) $ Map.toList ann ))
@@ -418,7 +419,7 @@ loadInitialComments = do
   return ()
 
 -- |First move to the given location, then call exactP
-exactPC :: (ExactP ast) => GHC.Located ast -> EP ()
+exactPC :: (GenericCon ast,ExactP ast) => GHC.Located ast -> EP ()
 exactPC a@(GHC.L l ast) =
     do pushSrcSpan l `debug` ("exactPC entered for:" ++ showGhc l)
        -- ma <- getAnnotation a
@@ -436,8 +437,6 @@ exactPC a@(GHC.L l ast) =
        printStringAtMaybeAnnAll AnnSemiSep ";"
 
        popSrcSpan
-
-
 
 printSeq :: [(Pos, EP ())] -> EP ()
 printSeq [] = return ()
@@ -493,7 +492,7 @@ printStreams (x@(p1,ep1):xs) (y@(p2,ep2):ys)
     | otherwise = printWhitespace p2 >> ep2 >> printStreams (x:xs) ys
 
 -- printMerged :: [a] -> [b] -> EP ()
-printMerged :: (ExactP a, ExactP b) => [GHC.Located a] -> [GHC.Located b] -> EP ()
+printMerged :: (GenericCon a,GenericCon b,ExactP a, ExactP b) => [GHC.Located a] -> [GHC.Located b] -> EP ()
 printMerged [] [] = return ()
 printMerged [] bs = mapM_ exactPC bs
 printMerged as [] = mapM_ exactPC as
@@ -1065,7 +1064,7 @@ instance ExactP (GHC.IPBind GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance (ExactP body) => ExactP (GHC.Match GHC.RdrName (GHC.Located body)) where
+instance (GenericCon body,ExactP body) => ExactP (GHC.Match GHC.RdrName (GHC.Located body)) where
   exactP (GHC.Match mln pats typ (GHC.GRHSs grhs lb)) = do
     (isSym,funid) <- getFunId
     isInfix <- getFunIsInfix
@@ -1218,7 +1217,7 @@ instance ExactP (GHC.HsType GHC.RdrName) where
     printStringAtMaybeAnn (G GHC.AnnDot)    "."
 
     case mwc of
-      Nothing -> exactPC ctx
+      Nothing -> if lc /= GHC.noSrcSpan then exactPC ctx else return ()
       Just lwc  -> exactPC (GHC.L lc (GHC.sortLocated ((GHC.L lwc GHC.HsWildcardTy):ctxs)))
 
     printStringAtMaybeAnn (G GHC.AnnDarrow) "=>"
@@ -1377,7 +1376,7 @@ instance ExactP (GHC.HsContext GHC.RdrName) where
     printStringAtMaybeAnn (G GHC.AnnCloseP) ")"
     printStringAtMaybeAnn (G GHC.AnnDarrow) "=>"
 
-instance (ExactP body) => ExactP (GHC.GRHS GHC.RdrName (GHC.Located body)) where
+instance (GenericCon body,ExactP body) => ExactP (GHC.GRHS GHC.RdrName (GHC.Located body)) where
   exactP (GHC.GRHS guards expr) = do
     printStringAtMaybeAnn (G GHC.AnnVbar) "|"
     mapM_ exactPC guards
@@ -1385,7 +1384,7 @@ instance (ExactP body) => ExactP (GHC.GRHS GHC.RdrName (GHC.Located body)) where
     printStringAtMaybeAnn (G GHC.AnnRarrow) "->" -- in a case
     exactPC expr
 
-instance (ExactP body)
+instance (GenericCon body,ExactP body)
   => ExactP (GHC.Stmt GHC.RdrName (GHC.Located body)) where
 
   exactP (GHC.LastStmt body _) = exactPC body
@@ -1743,7 +1742,7 @@ instance ExactP (GHC.HsExpr GHC.RdrName) where
 -- instance ExactP (GHC.HsRecField GHC.RdrName (GHC.LHsExpr GHC.RdrName)) where
 --   exactP (GHC.HsRecField _ e _) = exactPC e
 
-instance (ExactP arg) => ExactP (GHC.HsRecField GHC.RdrName (GHC.Located arg)) where
+instance (GenericCon arg,ExactP arg) => ExactP (GHC.HsRecField GHC.RdrName (GHC.Located arg)) where
   exactP (GHC.HsRecField n e _) = do
     exactPC n
     printStringAtMaybeAnn (G GHC.AnnEqual) "="
@@ -1854,7 +1853,7 @@ instance ExactP GHC.HsIPName where
 
 -- ---------------------------------------------------------------------
 
-exactPMatchGroup :: (ExactP body) => (GHC.MatchGroup GHC.RdrName (GHC.Located body))
+exactPMatchGroup :: (GenericCon body,ExactP body) => (GHC.MatchGroup GHC.RdrName (GHC.Located body))
                    -> EP ()
 exactPMatchGroup (GHC.MG matches _ _ _)
   = mapM_ exactPC matches

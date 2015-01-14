@@ -33,7 +33,7 @@ import qualified Data.Map as Map
 
 main :: IO ()
 main = do
-{-
+
     manipulateAstTest "examples/LetStmt.hs"               "Layout.LetStmt"
     manipulateAstTest "examples/LetExpr.hs"               "LetExpr"
     manipulateAstTest "examples/ExprPragmas.hs"           "ExprPragmas"
@@ -50,7 +50,6 @@ main = do
     manipulateAstTest "examples/ForeignDecl.hs"           "ForeignDecl"
     manipulateAstTest "examples/Warning.hs"               "Warning"
     manipulateAstTest "examples/Annotations.hs"           "Annotations"
-    manipulateAstTest "examples/DocDecls.hs"              "DocDecls"
     manipulateAstTestTH "examples/QuasiQuote.hs"          "QuasiQuote"
     manipulateAstTest "examples/Roles.hs"                 "Roles"
     manipulateAstTest "examples/Splice.hs"                "Splice"
@@ -102,13 +101,16 @@ main = do
     manipulateAstTest "examples/AltsSemis.hs"             "Main"
     manipulateAstTest "examples/Utils2.hs"                "Utils2"
     manipulateAstTest "examples/Deprecation.hs"           "Deprecation"
-    manipulateAstTest "examples/EmptyMostlyInst.hs"       "EmptyMostlyInst"
     manipulateAstTest "examples/EmptyMostlyNoSemis.hs"    "EmptyMostlyNoSemis"
     manipulateAstTest "examples/Dead1.hs"                 "Dead1"
     manipulateAstTest "examples/EmptyMostly.hs"           "EmptyMostly"
     manipulateAstTest "examples/FromUtils.hs"             "Main"
--}
+    manipulateAstTest "examples/EmptyMostlyInst.hs"       "EmptyMostlyInst"
+
     manipulateAstTest "examples/B.hs"                     "Main"
+
+    manipulateAstTest "examples/DocDecls.hs"              "DocDecls"
+
 {-
     manipulateAstTest "examples/Cpp.hs"                   "Main"
     manipulateAstTest "examples/Lhs.lhs"                  "Main"
