@@ -106,10 +106,12 @@ main = do
     manipulateAstTest "examples/EmptyMostly.hs"           "EmptyMostly"
     manipulateAstTest "examples/FromUtils.hs"             "Main"
     manipulateAstTest "examples/EmptyMostlyInst.hs"       "EmptyMostlyInst"
+    manipulateAstTest "examples/DocDecls.hs"              "DocDecls"
+    manipulateAstTest "examples/Unicode.hs"               "Main"
 
     manipulateAstTest "examples/B.hs"                     "Main"
 
-    manipulateAstTest "examples/DocDecls.hs"              "DocDecls"
+    manipulateAstTest "examples/Test.hs"                  "Main"
 
 {-
     manipulateAstTest "examples/Cpp.hs"                   "Main"
