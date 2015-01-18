@@ -53,6 +53,7 @@ import Data.Data
 import Data.List
 import Data.Maybe
 import Data.Monoid
+import Language.Haskell.GHC.GenericInstances
 
 import Language.Haskell.GHC.ExactPrint.Types
 

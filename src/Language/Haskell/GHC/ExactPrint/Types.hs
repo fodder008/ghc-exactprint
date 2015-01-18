@@ -55,7 +55,7 @@ import qualified StringBuffer   as GHC
 import qualified UniqSet        as GHC
 import qualified Unique         as GHC
 import qualified Var            as GHC
-import qualified Outputable    as GHC
+import qualified Outputable     as GHC
 
 import qualified Data.Map as Map
 
@@ -184,6 +184,7 @@ getAndRemoveAnnotationEP anns (GHC.L ss a)
      Nothing  -> (Nothing,anns)
      Just ann -> (Just ann,Map.delete (ss, annGetConstr a) anns)
 
+{-
 -- ---------------------------------------------------------------------
 -- Generic instances for GHC AST
 
@@ -244,3 +245,4 @@ deriving instance Generic (GHC.RdrName)
 -- deriving instance Generic (GHC.Name)
 deriving instance Generic (GHC.CType)
 
+-}
