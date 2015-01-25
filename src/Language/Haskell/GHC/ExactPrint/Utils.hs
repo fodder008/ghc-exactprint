@@ -26,7 +26,9 @@ module Language.Haskell.GHC.ExactPrint.Utils
   , undeltaComment
   , isGoodDelta
   , rdrName2String
+  , name2String
   , isSymbolRdrName
+  , isSymbolName
 
   , isListComp
 
@@ -83,8 +85,8 @@ import qualified Data.Map as Map
 import Debug.Trace
 
 debug :: c -> String -> c
--- debug = flip trace
-debug c _ = c
+debug = flip trace
+-- debug c _ = c
 
 -- ---------------------------------------------------------------------
 
@@ -2276,6 +2278,9 @@ ghcCommentText (GHC.L _ (GHC.AnnBlockComment s))    = "{-" ++ s ++ "-}"
 
 isSymbolRdrName :: GHC.RdrName -> Bool
 isSymbolRdrName n = GHC.isSymOcc $ GHC.rdrNameOcc n
+
+isSymbolName :: GHC.Name -> Bool
+isSymbolName n = GHC.isSymOcc $ GHC.getOccName n
 
 rdrName2String :: GHC.RdrName -> String
 rdrName2String r =

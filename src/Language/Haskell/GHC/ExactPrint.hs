@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE UndecidableInstances #-} -- for GHC.DataId
 
 -----------------------------------------------------------------------------
 -- |
@@ -26,6 +27,7 @@ module Language.Haskell.GHC.ExactPrint
         , Anns
         , exactPrintAnnotated
         , exactPrintAnnotation
+        , exactPrintRenamed
 
         , exactPrint
         , ExactP
@@ -88,7 +90,17 @@ instance SrcInfo GHC.SrcSpan where
   startLine   = srcSpanStartLine
   startColumn = srcSpanStartColumn
 
+class ToString a where
+  toString :: a -> String
+  isSymbol :: a -> Bool
 
+instance ToString GHC.RdrName where
+  toString = rdrName2String
+  isSymbol = isSymbolRdrName
+
+instance ToString GHC.Name where
+  toString = name2String
+  isSymbol = isSymbolName
 
 class Annotated a where
   ann :: a -> GHC.SrcSpan
@@ -333,6 +345,66 @@ countAnns an = do
 exactPrint :: (ExactP ast) => GHC.Located ast -> [Comment] -> String
 exactPrint ast@(GHC.L l _) cs = runEP (exactPC ast) l cs (Map.empty,Map.empty)
 
+-- ---------------------------------------------------------------------
+
+exactPrintRenamed :: GHC.RenamedSource -> GHC.ParsedSource -> Anns -> String
+exactPrintRenamed (decls,imps,mexp,_docs) parsed an =
+  let
+    getSigs  (GHC.ValBindsOut _ sigs) = sigs
+    getDecls (GHC.ValBindsOut ds _) = concatMap GHC.bagToList $ map snd ds
+    getTycl  (GHC.TyClGroup ds _) = ds
+
+    doIt (GHC.L l (GHC.HsModule mmn _mexp _imps _decls mdepr _haddock)) = do
+
+      case mmn of
+        Just (GHC.L _ mn) -> do
+          printStringAtMaybeAnn (G GHC.AnnModule) "module" -- `debug` ("exactP.HsModule:cs=" ++ show cs)
+          printStringAtMaybeAnn (G GHC.AnnVal) (GHC.moduleNameString mn)
+        Nothing -> return ()
+
+      case mdepr of
+        Nothing -> return ()
+        Just depr -> exactPC depr
+
+      case mexp of
+        Just lexps -> do
+          return () `debug` ("about to exactPC lexps")
+          mapM_ exactPC lexps
+          return ()
+        Nothing -> return ()
+
+      printStringAtMaybeAnn (G GHC.AnnWhere) "where"
+      printStringAtMaybeAnn (G GHC.AnnOpenC)  "{"
+      printStringAtMaybeAnnAll (G GHC.AnnSemi) ";" -- possible leading semis
+      exactP imps
+
+      applyListPrint
+           (  prepareListPrint (getSigs $ GHC.hs_valds decls)
+           ++ prepareListPrint (getDecls $ GHC.hs_valds decls)
+           ++ prepareListPrint (GHC.hs_splcds decls)
+           ++ prepareListPrint (concatMap getTycl $ GHC.hs_tyclds decls)
+           ++ prepareListPrint (GHC.hs_instds decls)
+           ++ prepareListPrint (GHC.hs_fixds decls)
+           ++ prepareListPrint (GHC.hs_defds decls)
+           ++ prepareListPrint (GHC.hs_fords decls)
+           ++ prepareListPrint (GHC.hs_warnds decls)
+           ++ prepareListPrint (GHC.hs_annds decls)
+           ++ prepareListPrint (GHC.hs_ruleds decls)
+           ++ prepareListPrint (GHC.hs_vects decls)
+           ++ prepareListPrint (GHC.hs_docs decls)
+           -- ++ prepareListPrint imps
+           -- ++ prepareListPrint (maybe [] id mexp)
+           -- ++ prepareListPrint docs
+           )
+
+      printStringAtMaybeAnn (G GHC.AnnCloseC) "}"
+
+      -- put the end of file whitespace in
+      printStringAtMaybeAnn (G GHC.AnnEofPos) ""
+  in
+    runEP (loadInitialComments >> doIt parsed) (GHC.getLoc parsed) [] an
+
+-- ---------------------------------------------------------------------
 
 exactPrintAnnotated ::
      GHC.Located (GHC.HsModule GHC.RdrName) -> GHC.ApiAnns -> String
@@ -462,7 +534,7 @@ instance ExactP (GHC.ModuleName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP [GHC.LIE GHC.RdrName] where
+instance (ExactP name) => ExactP [GHC.LIE name] where
   exactP ies = do
     printStringAtMaybeAnn (G GHC.AnnHiding) "hiding"
     printStringAtMaybeAnn (G GHC.AnnOpenP) "("
@@ -471,7 +543,7 @@ instance ExactP [GHC.LIE GHC.RdrName] where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.IE GHC.RdrName) where
+instance (ExactP name) => ExactP (GHC.IE name) where
   exactP (GHC.IEVar ln) = do
     printStringAtMaybeAnn (G GHC.AnnPattern) "pattern"
     printStringAtMaybeAnn (G GHC.AnnType)    "type"
@@ -497,16 +569,15 @@ instance ExactP (GHC.IE GHC.RdrName) where
     printStringAtMaybeAnn (G GHC.AnnModule)  "module"
     printStringAtMaybeAnn (G GHC.AnnVal)     (GHC.moduleNameString mn)
 
-  exactP x = printString ("no exactP.IE for " ++ showGhc (x))
 
 -- ---------------------------------------------------------------------
 
-instance ExactP [GHC.LImportDecl GHC.RdrName] where
+instance (ExactP name) => ExactP [GHC.LImportDecl name] where
   exactP imps = mapM_ exactPC imps
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.ImportDecl GHC.RdrName) where
+instance (ExactP name) => ExactP (GHC.ImportDecl name) where
   exactP imp = do
     printStringAtMaybeAnn (G GHC.AnnImport) "import"
 
@@ -536,7 +607,8 @@ doMaybe f ma = case ma of
                  Nothing -> return ()
                  Just a -> f a
 
-instance ExactP (GHC.HsDecl GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.HsDecl name) where
   exactP decl = case decl of
     GHC.TyClD d       -> exactP d
     GHC.InstD d       -> exactP d
@@ -556,7 +628,7 @@ instance ExactP (GHC.HsDecl GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.RoleAnnotDecl GHC.RdrName) where
+instance (ExactP name) => ExactP (GHC.RoleAnnotDecl name) where
   exactP (GHC.RoleAnnotDecl ln mr) = do
     printStringAtMaybeAnn (G GHC.AnnType) "type"
     printStringAtMaybeAnn (G GHC.AnnRole) "role"
@@ -569,12 +641,13 @@ instance ExactP (Maybe GHC.Role) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.HsQuasiQuote GHC.RdrName) where
+instance (Data name) => ExactP (GHC.HsQuasiQuote name) where
   exactP = assert False undefined
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.SpliceDecl GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.SpliceDecl name) where
   exactP (GHC.SpliceDecl (GHC.L _ (GHC.HsSplice _n e)) flag) = do
     case flag of
       GHC.ExplicitSplice ->
@@ -586,7 +659,8 @@ instance ExactP (GHC.SpliceDecl GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.VectDecl GHC.RdrName) where
+instance (GHC.DataId name, ExactP name,ToString name)
+  => ExactP (GHC.VectDecl name) where
   exactP (GHC.HsVect src ln e) = do
     printStringAtMaybeAnn (G GHC.AnnOpen) src -- "{-# VECTORISE"
     exactPC ln
@@ -624,7 +698,8 @@ instance ExactP (GHC.VectDecl GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.RuleDecls GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.RuleDecls name) where
   exactP (GHC.HsRules src rules) = do
     printStringAtMaybeAnn (G GHC.AnnOpen) src
     mapM_ exactPC rules
@@ -632,7 +707,8 @@ instance ExactP (GHC.RuleDecls GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.AnnDecl GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.AnnDecl name) where
   exactP (GHC.HsAnnotation src prov e) = do
     printStringAtMaybeAnn (G GHC.AnnOpen) src
     printStringAtMaybeAnn (G GHC.AnnType) "type"
@@ -646,7 +722,8 @@ instance ExactP (GHC.AnnDecl GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.RuleDecl GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.RuleDecl name) where
   exactP (GHC.HsRule ln act bndrs lhs _ rhs _) = do
     exactPC ln
     -- activation
@@ -668,7 +745,8 @@ instance ExactP (GHC.RuleDecl GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.RuleBndr GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.RuleBndr name) where
   exactP (GHC.RuleBndr ln) = exactPC ln
   exactP (GHC.RuleBndrSig ln (GHC.HsWB thing _ _ _)) = do
     printStringAtMaybeAnn (G GHC.AnnOpenP) "("
@@ -679,7 +757,7 @@ instance ExactP (GHC.RuleBndr GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.WarnDecls GHC.RdrName) where
+instance (ExactP name) => ExactP (GHC.WarnDecls name) where
   exactP (GHC.Warnings src warns) = do
     printStringAtMaybeAnn (G GHC.AnnOpen) src
     mapM_ exactPC warns
@@ -687,7 +765,7 @@ instance ExactP (GHC.WarnDecls GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.WarnDecl GHC.RdrName) where
+instance (ExactP name) => ExactP (GHC.WarnDecl name) where
   exactP (GHC.Warning lns txt) = do
      mapM_ exactPC lns
      printStringAtMaybeAnn (G GHC.AnnOpenS) "["
@@ -703,7 +781,8 @@ instance ExactP GHC.FastString where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.ForeignDecl GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.ForeignDecl name) where
   exactP (GHC.ForeignImport ln typ _
                (GHC.CImport cconv safety@(GHC.L ll _) _mh _imp (GHC.L _ src))) = do
     printStringAtMaybeAnn (G GHC.AnnForeign) "foreign"
@@ -753,7 +832,8 @@ instance ExactP GHC.Safety where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.DerivDecl GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.DerivDecl name) where
   exactP (GHC.DerivDecl typ mov) = do
     printStringAtMaybeAnn (G GHC.AnnDeriving) "deriving"
     printStringAtMaybeAnn (G GHC.AnnInstance) "instance"
@@ -764,7 +844,8 @@ instance ExactP (GHC.DerivDecl GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.DefaultDecl GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.DefaultDecl name) where
   exactP (GHC.DefaultDecl typs) = do
     printStringAtMaybeAnn (G GHC.AnnDefault) "default"
     printStringAtMaybeAnn (G GHC.AnnOpenP) "("
@@ -773,7 +854,8 @@ instance ExactP (GHC.DefaultDecl GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.InstDecl GHC.RdrName) where
+instance (GHC.DataId name,ToString name,ExactP name)
+  => ExactP (GHC.InstDecl name) where
   exactP (GHC.ClsInstD      cid) = exactP  cid
   exactP (GHC.DataFamInstD dfid) = exactP dfid
   exactP (GHC.TyFamInstD   tfid) = exactP tfid
@@ -804,7 +886,8 @@ instance ExactP GHC.OverlapMode where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.ClsInstDecl GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.ClsInstDecl name) where
   exactP (GHC.ClsInstDecl poly binds sigs tyfams datafams mov) = do
     printStringAtMaybeAnn (G GHC.AnnInstance) "instance"
     case mov of
@@ -824,7 +907,8 @@ instance ExactP (GHC.ClsInstDecl GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.TyFamInstDecl GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.TyFamInstDecl name) where
    exactP (GHC.TyFamInstDecl eqn _) = do
      printStringAtMaybeAnn (G GHC.AnnType)     "type"
      printStringAtMaybeAnn (G GHC.AnnInstance) "instance"
@@ -832,7 +916,8 @@ instance ExactP (GHC.TyFamInstDecl GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.DataFamInstDecl GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.DataFamInstDecl name) where
    exactP (GHC.DataFamInstDecl ln (GHC.HsWB pats _ _ _)
             (GHC.HsDataDefn _nOrD _ctx _mtyp mkind cons mderivs) _) = do
     printStringAtMaybeAnn (G GHC.AnnData)     "data"
@@ -852,9 +937,9 @@ instance ExactP (GHC.DataFamInstDecl GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.HsBind GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name) => ExactP (GHC.HsBind name) where
   exactP (GHC.FunBind (GHC.L _ n) isInfix  (GHC.MG matches _ _ _) _ _ _) = do
-    setFunId (isSymbolRdrName n,rdrName2String n)
+    setFunId (isSymbol n,toString n)
     setFunIsInfix isInfix
     mapM_ exactPC matches
 
@@ -893,7 +978,8 @@ instance ExactP (GHC.HsBind GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.IPBind GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.IPBind name) where
   exactP (GHC.IPBind en e) = do
     case en of
       Left n -> exactPC n
@@ -903,7 +989,8 @@ instance ExactP (GHC.IPBind GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance (ExactP body) => ExactP (GHC.Match GHC.RdrName (GHC.Located body)) where
+instance (GHC.DataId name,ExactP name,ToString name,ExactP body)
+  => ExactP (GHC.Match name (GHC.Located body)) where
   exactP (GHC.Match mln pats typ (GHC.GRHSs grhs lb)) = do
     (isSym,funid) <- getFunId
     isInfix <- getFunIsInfix
@@ -937,11 +1024,12 @@ instance (ExactP body) => ExactP (GHC.Match GHC.RdrName (GHC.Located body)) wher
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.Pat GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.Pat name) where
 
   exactP (GHC.WildPat _) = printStringAtMaybeAnn (G GHC.AnnVal) "_"
 
-  exactP (GHC.VarPat n) = printStringAtMaybeAnn (G GHC.AnnVal) (rdrName2String n)
+  exactP (GHC.VarPat n) = printStringAtMaybeAnn (G GHC.AnnVal) (toString n)
 
   exactP (GHC.LazyPat p)    = do
     printStringAtMaybeAnn (G GHC.AnnTilde) "~"
@@ -1009,7 +1097,7 @@ instance ExactP (GHC.Pat GHC.RdrName) where
 
   exactP (GHC.QuasiQuotePat (GHC.HsQuasiQuote n _ q)) = do
     printStringAtMaybeAnn (G GHC.AnnVal)
-                    ("[" ++ (rdrName2String n) ++ "|" ++ (GHC.unpackFS q) ++ "|]")
+                    ("[" ++ (toString n) ++ "|" ++ (GHC.unpackFS q) ++ "|]")
 
   exactP (GHC.LitPat lp) = do
     printStringAtMaybeAnn (G GHC.AnnVal) (hsLit2String lp)
@@ -1032,17 +1120,18 @@ instance ExactP (GHC.Pat GHC.RdrName) where
   exactP (GHC.CoPat {}) = return ()
 
 -- ---------------------------------------------------------------------
-
+{-
 instance ExactP (GHC.HsType GHC.Name) where
   exactP typ = do
     return () `debug` ("exactP.HsType not implemented for " ++ showGhc (typ))
     printString "HsType.Name"
     -- Note: This should never appear, only the one for GHC.RdrName
     assert False undefined
-
+-}
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.HsType GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.HsType name) where
   exactP (GHC.HsForAllTy _f mwc (GHC.HsQTvs _kvs tvs) ctx@(GHC.L lc ctxs) typ) = do
     printStringAtMaybeAnn (G GHC.AnnOpenP)   "("
     printStringAtMaybeAnn (G GHC.AnnForall) "forall"
@@ -1121,7 +1210,7 @@ instance ExactP (GHC.HsType GHC.RdrName) where
 
   exactP (GHC.HsQuasiQuoteTy (GHC.HsQuasiQuote n _ss q)) = do
     printStringAtMaybeAnn (G GHC.AnnVal)
-                    ("[" ++ (rdrName2String n) ++ "|" ++ (GHC.unpackFS q) ++ "|]")
+                    ("[" ++ (toString n) ++ "|" ++ (GHC.unpackFS q) ++ "|]")
 
   exactP (GHC.HsSpliceTy (GHC.HsSplice _is e) _) = do
     printStringAtMaybeAnn (G GHC.AnnOpen)  "$("
@@ -1178,7 +1267,7 @@ instance ExactP (GHC.HsType GHC.RdrName) where
     printStringAtMaybeAnn (G GHC.AnnDarrow) "=>" -- if only part of a partial type signature context
 
   exactP (GHC.HsNamedWildcardTy n) = do
-    printStringAtMaybeAnn (G GHC.AnnVal) (rdrName2String n)
+    printStringAtMaybeAnn (G GHC.AnnVal) (toString n)
 
 -- ---------------------------------------------------------------------
 
@@ -1186,7 +1275,8 @@ instance ExactP GHC.HsDocString where
   exactP (GHC.HsDocString s) = do
     printStringAtMaybeAnn (G GHC.AnnVal) (GHC.unpackFS s)
 
-instance ExactP (GHC.ConDeclField GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.ConDeclField name) where
   exactP (GHC.ConDeclField ns ty mdoc) = do
     mapM_ exactPC ns
     printStringAtMaybeAnn (G GHC.AnnDcolon) "::"
@@ -1195,7 +1285,8 @@ instance ExactP (GHC.ConDeclField GHC.RdrName) where
       Just doc -> exactPC doc
       Nothing -> return ()
 
-instance ExactP (GHC.HsContext GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.HsContext name) where
   exactP typs = do
     -- printStringAtMaybeAnn (G GHC.AnnUnit "()"
 
@@ -1206,7 +1297,8 @@ instance ExactP (GHC.HsContext GHC.RdrName) where
     printStringAtMaybeAnn (G GHC.AnnCloseP) ")"
     printStringAtMaybeAnn (G GHC.AnnDarrow) "=>"
 
-instance (ExactP body) => ExactP (GHC.GRHS GHC.RdrName (GHC.Located body)) where
+instance (GHC.DataId name,ExactP name,ToString name,ExactP body)
+  => ExactP (GHC.GRHS name (GHC.Located body)) where
   exactP (GHC.GRHS guards expr) = do
     printStringAtMaybeAnn (G GHC.AnnVbar) "|"
     mapM_ exactPC guards
@@ -1214,8 +1306,8 @@ instance (ExactP body) => ExactP (GHC.GRHS GHC.RdrName (GHC.Located body)) where
     printStringAtMaybeAnn (G GHC.AnnRarrow) "->" -- in a case
     exactPC expr
 
-instance (ExactP body)
-  => ExactP (GHC.Stmt GHC.RdrName (GHC.Located body)) where
+instance (GHC.DataId name,ExactP name,ToString name,ExactP body)
+  => ExactP (GHC.Stmt name (GHC.Located body)) where
 
   exactP (GHC.LastStmt body _) = exactPC body
     `debug` ("exactP.LastStmt")
@@ -1267,13 +1359,15 @@ instance (ExactP body)
 
 -- ---------------------------------------------------------------------
 
-exactPParStmtBlock :: GHC.ParStmtBlock GHC.RdrName GHC.RdrName -> EP ()
+exactPParStmtBlock :: (GHC.DataId name,ExactP name,ToString name)
+  => GHC.ParStmtBlock name name -> EP ()
 exactPParStmtBlock (GHC.ParStmtBlock stmts _ns _) = do
   mapM_ exactPC stmts
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.HsExpr GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.HsExpr name) where
   exactP (GHC.HsVar v)  = exactP v
   exactP (GHC.HsIPVar (GHC.HsIPName v)) = do
     printStringAtMaybeAnn (G GHC.AnnVal) ("?" ++ GHC.unpackFS v)
@@ -1454,8 +1548,8 @@ instance ExactP (GHC.HsExpr GHC.RdrName) where
     exactPC e
 
   exactP (GHC.HsBracket (GHC.VarBr single v)) = do
-    if single then printStringAtMaybeAnn (G GHC.AnnVal) ("'"  ++ rdrName2String v)
-              else printStringAtMaybeAnn (G GHC.AnnVal) ("''" ++ rdrName2String v)
+    if single then printStringAtMaybeAnn (G GHC.AnnVal) ("'"  ++ toString v)
+              else printStringAtMaybeAnn (G GHC.AnnVal) ("''" ++ toString v)
   exactP (GHC.HsBracket (GHC.DecBrL ds)) = do
     cnt <- countAnns (G GHC.AnnOpen)
     case cnt of
@@ -1500,7 +1594,7 @@ instance ExactP (GHC.HsExpr GHC.RdrName) where
 
   exactP (GHC.HsQuasiQuoteE (GHC.HsQuasiQuote n _ str)) = do
     printStringAtMaybeAnn (G GHC.AnnVal)
-          ("[" ++ (rdrName2String n) ++ "|" ++ (GHC.unpackFS str) ++ "|]")
+          ("[" ++ (toString n) ++ "|" ++ (GHC.unpackFS str) ++ "|]")
 
   exactP (GHC.HsProc p c) = do
     printStringAtMaybeAnn (G GHC.AnnProc) "proc"
@@ -1565,12 +1659,10 @@ instance ExactP (GHC.HsExpr GHC.RdrName) where
   exactP (GHC.HsWrap _ _) = return ()
   exactP (GHC.HsUnboundVar _) = return ()
 
-  exactP e = printString "HsExpr"
-    `debug` ("exactP.HsExpr:not processing " ++ (showGhc e) )
-
 -- ---------------------------------------------------------------------
 
-instance (ExactP arg) => ExactP (GHC.HsRecField GHC.RdrName (GHC.Located arg)) where
+instance (ExactP name,ExactP arg)
+  => ExactP (GHC.HsRecField name (GHC.Located arg)) where
   exactP (GHC.HsRecField n e _) = do
     exactPC n
     printStringAtMaybeAnn (G GHC.AnnEqual) "="
@@ -1578,12 +1670,14 @@ instance (ExactP arg) => ExactP (GHC.HsRecField GHC.RdrName (GHC.Located arg)) w
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.HsCmdTop GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.HsCmdTop name) where
   exactP (GHC.HsCmdTop cmd _ _ _) = exactPC cmd
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.HsCmd GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.HsCmd name) where
   exactP (GHC.HsCmdArrApp e1 e2 _ _ _) = do
     exactPC e1
     -- only one of the next 4 will be resent
@@ -1675,20 +1769,49 @@ instance ExactP GHC.RdrName where
         printStringAtMaybeAnn (G GHC.AnnCloseP)    ")"
         return () `debug` ("exactP.RdrName:n=" ++ str)
 
+instance ExactP GHC.Name where
+  exactP n = do
+    case name2String n of
+      "[]" -> do
+        printStringAtMaybeAnn (G GHC.AnnOpenS) "["
+        printStringAtMaybeAnn (G GHC.AnnCloseS) "]"
+      "()" -> do
+        printStringAtMaybeAnn (G GHC.AnnOpenP) "("
+        printStringAtMaybeAnn (G GHC.AnnCloseP) ")"
+      "(##)" -> do
+        printStringAtMaybeAnn (G GHC.AnnOpen) "(#"
+        printStringAtMaybeAnn (G GHC.AnnClose) "#)"
+      "[::]" -> do
+        printStringAtMaybeAnn (G GHC.AnnOpen) "[:"
+        printStringAtMaybeAnn (G GHC.AnnClose) ":]"
+      str ->  do
+        printStringAtMaybeAnn (G GHC.AnnType)      "type"
+        printStringAtMaybeAnn (G GHC.AnnOpenP)     "("
+        printStringAtMaybeAnn (G GHC.AnnBackquote)  "`"
+        printStringAtMaybeAnn (G GHC.AnnTildehsh)  "~#"
+        printStringAtMaybeAnn (G GHC.AnnTilde)     "~"
+        printStringAtMaybeAnn (G GHC.AnnRarrow)    "->"
+        printStringAtMaybeAnn (G GHC.AnnVal)       str
+        printStringAtMaybeAnn (G GHC.AnnBackquote) "`"
+        printStringAtMaybeAnnAll (G GHC.AnnCommaTuple) "," -- For '(,,,)'
+        printStringAtMaybeAnn (G GHC.AnnCloseP)    ")"
+        return () `debug` ("exactP.Name:n=" ++ str)
+
 instance ExactP GHC.HsIPName where
   exactP (GHC.HsIPName n) = do
     printStringAtMaybeAnn (G GHC.AnnVal) ("?" ++ GHC.unpackFS n)
 
 -- ---------------------------------------------------------------------
 
-exactPMatchGroup :: (ExactP body) => (GHC.MatchGroup GHC.RdrName (GHC.Located body))
-                   -> EP ()
+exactPMatchGroup :: (GHC.DataId name,ExactP name,ToString name,ExactP body)
+  => (GHC.MatchGroup name (GHC.Located body)) -> EP ()
 exactPMatchGroup (GHC.MG matches _ _ _)
   = mapM_ exactPC matches
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.HsTupArg GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.HsTupArg name) where
   exactP (GHC.Missing _) = do
     printStringAtMaybeAnn (G GHC.AnnComma) ","
     return ()
@@ -1696,16 +1819,34 @@ instance ExactP (GHC.HsTupArg GHC.RdrName) where
     exactPC e
     printStringAtMaybeAnn (G GHC.AnnComma) ","
 
-instance ExactP (GHC.HsLocalBinds GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.HsLocalBinds name) where
   exactP (GHC.HsValBinds (GHC.ValBindsIn binds sigs)) = do
     printMerged (GHC.bagToList binds) sigs
-  exactP (GHC.HsValBinds (GHC.ValBindsOut _binds _sigs)) = printString "ValBindsOut"
+  exactP (GHC.HsValBinds (GHC.ValBindsOut binds sigs)) = do
+    applyListPrint
+           (  prepareListPrint (concatMap GHC.bagToList $ map snd binds)
+           ++ prepareListPrint sigs)
   exactP (GHC.HsIPBinds (GHC.IPBinds binds _)) = mapM_ exactPC binds
   exactP (GHC.EmptyLocalBinds) = return ()
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.Sig GHC.RdrName) where
+instance (GHC.DataId name,ExactP name)
+  => ExactP (GHC.FixitySig name) where
+  exactP (GHC.FixitySig lns (GHC.Fixity v fdir)) = do
+    let fixstr = case fdir of
+         GHC.InfixL -> "infixl"
+         GHC.InfixR -> "infixr"
+         GHC.InfixN -> "infix"
+    printStringAtMaybeAnn (G GHC.AnnInfix) fixstr
+    printStringAtMaybeAnn (G GHC.AnnVal) (show v)
+    mapM_ exactPC lns
+
+  -- ---------------------------------------------------------------------
+
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.Sig name) where
   exactP (GHC.TypeSig lns typ _) = do
     mapM_ exactPC lns
     printStringAtMaybeAnn (G GHC.AnnDcolon) "::"
@@ -1735,6 +1876,8 @@ instance ExactP (GHC.Sig GHC.RdrName) where
 
   exactP (GHC.IdSig _) = return ()
 
+  exactP (GHC.FixSig fixity) = exactP fixity
+{-
   exactP (GHC.FixSig (GHC.FixitySig lns (GHC.Fixity v fdir))) = do
     let fixstr = case fdir of
          GHC.InfixL -> "infixl"
@@ -1743,6 +1886,7 @@ instance ExactP (GHC.Sig GHC.RdrName) where
     printStringAtMaybeAnn (G GHC.AnnInfix) fixstr
     printStringAtMaybeAnn (G GHC.AnnVal) (show v)
     mapM_ exactPC lns
+-}
 
   exactP (GHC.InlineSig n inl) = do
     let actStr = case GHC.inl_act inl of
@@ -1775,7 +1919,7 @@ instance ExactP (GHC.Sig GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.HsOverLit GHC.RdrName) where
+instance (GHC.DataId name) => ExactP (GHC.HsOverLit name) where
   exactP ol = do
     case GHC.ol_val ol of
       GHC.HsIntegral src _ -> printStringAtMaybeAnn (G GHC.AnnVal) src
@@ -1807,7 +1951,8 @@ hsLit2String lit =
 -- ---------------------------------------------------------------------
 
 
-instance ExactP (GHC.TyClDecl GHC.RdrName) where
+instance (GHC.DataId name, ExactP name,ToString name)
+  => ExactP (GHC.TyClDecl name) where
   exactP (GHC.FamDecl famdecl) = exactP famdecl
 
   exactP (GHC.SynDecl ln (GHC.HsQTvs _ tyvars) typ _) = do
@@ -1866,7 +2011,8 @@ printTyClass ln tyVars = do
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.FamilyDecl GHC.RdrName) where
+instance (GHC.DataId name, ExactP name,ToString name)
+  => ExactP (GHC.FamilyDecl name) where
   exactP (GHC.FamilyDecl info ln (GHC.HsQTvs _ tyvars) mkind) = do
     printStringAtMaybeAnn (G GHC.AnnType)   "type"
     printStringAtMaybeAnn (G GHC.AnnData)   "data"
@@ -1885,12 +2031,13 @@ instance ExactP (GHC.FamilyDecl GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.TyFamDefltEqn GHC.RdrName) where
+instance (GHC.DataId name) => ExactP (GHC.TyFamDefltEqn name) where
    exactP = assert False undefined
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.TyFamInstEqn GHC.RdrName) where
+instance (GHC.DataId name, ExactP name,ToString name)
+  => ExactP (GHC.TyFamInstEqn name) where
   exactP (GHC.TyFamEqn ln (GHC.HsWB pats _ _ _) typ) = do
     exactPC ln
     mapM_ exactPC pats
@@ -1911,7 +2058,7 @@ instance ExactP GHC.DocDecl where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.FunDep (GHC.Located GHC.RdrName)) where
+instance (ExactP name) => ExactP (GHC.FunDep (GHC.Located name)) where
   exactP (ls,rs) = do
     mapM_ exactPC ls
     printStringAtMaybeAnn (G GHC.AnnRarrow) "->"
@@ -1919,8 +2066,9 @@ instance ExactP (GHC.FunDep (GHC.Located GHC.RdrName)) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.HsTyVarBndr GHC.RdrName) where
-  exactP (GHC.UserTyVar n) = printStringAtMaybeAnn (G GHC.AnnVal) (rdrName2String n)
+instance (GHC.DataId name,ToString name,ExactP name)
+  => ExactP (GHC.HsTyVarBndr name) where
+  exactP (GHC.UserTyVar n) = printStringAtMaybeAnn (G GHC.AnnVal) (toString n)
   exactP (GHC.KindedTyVar n ty) = do
     printStringAtMaybeAnn (G GHC.AnnOpenP) "("
     exactPC n
@@ -1930,12 +2078,14 @@ instance ExactP (GHC.HsTyVarBndr GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP [GHC.LConDecl GHC.RdrName] where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP [GHC.LConDecl name] where
   exactP cons = mapM_ exactPC cons
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (GHC.ConDecl GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (GHC.ConDecl name) where
   exactP (GHC.ConDecl lns _exp (GHC.HsQTvs _ns bndrs) ctx dets res _ _) = do
     case res of
       GHC.ResTyH98 -> do
@@ -1992,7 +2142,8 @@ instance ExactP (GHC.ConDecl GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP (ResTyGADTHook GHC.RdrName) where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP (ResTyGADTHook name) where
   exactP (ResTyGADTHook bndrs) = do
     printStringAtMaybeAnn (G GHC.AnnForall) "forall"
     mapM_ exactPC bndrs
@@ -2000,7 +2151,8 @@ instance ExactP (ResTyGADTHook GHC.RdrName) where
 
 -- ---------------------------------------------------------------------
 
-instance ExactP [GHC.LConDeclField GHC.RdrName] where
+instance (GHC.DataId name,ExactP name,ToString name)
+  => ExactP [GHC.LConDeclField name] where
   exactP fs = do
     printStringAtMaybeAnn (G GHC.AnnOpenC) "{"
     mapM_ exactPC fs

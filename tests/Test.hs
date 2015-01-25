@@ -134,9 +134,9 @@ mkTestModTH fileName modName
 
 -- ---------------------------------------------------------------------
 
-t :: IO Bool
-t = do
-
+tt :: IO Bool
+tt = do
+{-
     manipulateAstTest "examples/LetStmt.hs"               "Layout.LetStmt"
     manipulateAstTest "examples/LetExpr.hs"               "LetExpr"
     manipulateAstTest "examples/ExprPragmas.hs"           "ExprPragmas"
@@ -211,13 +211,13 @@ t = do
     -- manipulateAstTest "examples/Unicode.hs"               "Main"
     manipulateAstTest "examples/B.hs"                     "Main"
     manipulateAstTest "examples/LayoutWhere.hs"           "Main"
-    manipulateAstTest "examples/LayoutLet.hs"             "Main"
     manipulateAstTest "examples/Deprecation.hs"           "Deprecation"
     manipulateAstTest "examples/Infix.hs"                 "Main"
     manipulateAstTest "examples/BCase.hs"                 "Main"
     manipulateAstTest "examples/AltsSemis.hs"             "Main"
-
     manipulateAstTest "examples/LetExprSemi.hs"           "LetExprSemi"
+-}
+    manipulateAstTest "examples/LayoutLet.hs"             "Main"
 {-
     manipulateAstTest "examples/Cpp.hs"                   "Main"
     manipulateAstTest "examples/Lhs.lhs"                  "Main"
@@ -234,33 +234,29 @@ examplesDir2 :: FilePath
 examplesDir2 = "examples"
 
 manipulateAstTest :: FilePath -> String -> IO Bool
-manipulateAstTest file modname = manipulateAstTest' False file modname
+manipulateAstTest file modname = manipulateAstTest' False True file modname
 
 manipulateAstTestTH :: FilePath -> String -> IO Bool
-manipulateAstTestTH file modname = manipulateAstTest' True file modname
+manipulateAstTestTH file modname = manipulateAstTest' True True file modname
 
-manipulateAstTest' :: Bool -> FilePath -> String -> IO Bool
-manipulateAstTest' useTH file modname = do
+manipulateAstTest' :: Bool -> Bool -> FilePath -> String -> IO Bool
+manipulateAstTest' useTH useRenamed file modname = do
   let out    = file <.> "out"
-      golden = file <.> "golden"
 
   contents <- readUTF8File file
   (ghcAnns,t) <- parsedFileGhc file modname useTH
   let
-    parsed@(GHC.L l hsmod) = GHC.pm_parsed_source $ GHC.tm_parsed_module t
+    parsed = GHC.pm_parsed_source $ GHC.tm_parsed_module t
+    Just renamed = GHC.tm_renamed_source t
     parsedAST = SYB.showData SYB.Parser 0 parsed
-    -- parsedAST = showGhc parsed
-       -- `debug` ("getAnn:=" ++ (show (getAnnotationValue (snd ann) (GHC.getLoc parsed) :: Maybe AnnHsModule)))
+
     -- try to pretty-print; summarize the test result
     ann = annotateAST parsed ghcAnns
       `debug` ("ghcAnns:" ++ showGhc ghcAnns)
 
-    Just (GHC.L le exps) = GHC.hsmodExports hsmod
-    secondExp@(GHC.L l2 _) = ghead "foo" $ tail exps
-    ss = GHC.mkSrcSpan (GHC.mkSrcLoc (GHC.mkFastString "examples/PatBind.hs") 16 9)
-                       (GHC.mkSrcLoc (GHC.mkFastString "examples/PatBind.hs") 16 27)
-
-    printed = exactPrintAnnotation parsed [] ann -- `debug` ("ann=" ++ (show $ map (\(s,a) -> (ss2span s, a)) $ Map.toList ann))
+    printed = if useRenamed
+                then exactPrintRenamed    renamed parsed ann
+                else exactPrintAnnotation parsed  []     ann
     result =
             if printed == contents
               then "Match\n"
@@ -272,7 +268,7 @@ manipulateAstTest' useTH file modname = do
   -- putStrLn $ "Test:ann organised:" ++ showGhc (organiseAnns ann)
   -- putStrLn $ "Test:showdata:" ++ showAnnData (organiseAnns ann) 0 parsed
   return ("Match\n"  == result)
--- }}}
+
 
 
 -- ---------------------------------------------------------------------
