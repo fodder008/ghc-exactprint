@@ -162,7 +162,7 @@ pushOffset dp@(DP (f,dc)) = EP (\l dps s cs st an ->
     --                 else dc + co
     co' = dc + co
   in ((),l,(co',dp):dps,s,cs,st,an,id)
-     `debug` ("pushOffset:co'=" ++ show co')
+     `debug` ("pushOffset:(co',co)=" ++ show (co',co))
      )
 
 popOffset :: EP ()
@@ -268,8 +268,8 @@ dropComment = EP $ \l dp s cs st an ->
 
 mergeComments :: [DComment] -> EP ()
 mergeComments dcs = EP $ \l dps s cs st an ->
-    let ll = ss2pos $ head s
-        (co,_) = ghead "mergeComments" dps
+    let ll = ss2pos $ ghead "mergeComments.1" s
+        (co,_) = ghead "mergeComments.2" dps
         acs = map (undeltaComment ll co) dcs
         cs' = merge acs cs
     in ((), l, dps, s, cs', st, an, id) `debug` ("mergeComments:(l,acs,dcs)=" ++ show (l,acs,dcs))
@@ -371,61 +371,76 @@ exactPrint ast@(GHC.L l _) cs = runEP (exactPC ast) l cs (Map.empty,Map.empty)
 -- ---------------------------------------------------------------------
 
 exactPrintRenamed :: GHC.RenamedSource -> GHC.ParsedSource -> Anns -> String
-exactPrintRenamed (decls,imps,mexp,_docs) parsed an =
-  let
-    getSigs  (GHC.ValBindsOut _ sigs) = sigs
-    getDecls (GHC.ValBindsOut ds _) = concatMap GHC.bagToList $ map snd ds
-    getTycl  (GHC.TyClGroup ds _) = ds
+exactPrintRenamed renamed parsed an
+  = runEP (loadInitialComments >> exactPC (GHC.L (GHC.getLoc parsed) (RenamedSourceHook renamed parsed)))
+          (GHC.getLoc parsed) [] (ane,snd an)
+  where
+    ane = Map.fromList $ map replace $ Map.toList (fst an)
+    replace ((ss,CN "HsModule"),v) = ((ss,CN "RenamedSourceHook"),v)
+    replace x = x
 
-    doIt (GHC.L l (GHC.HsModule mmn _mexp _imps _decls mdepr _haddock)) = do
+instance ExactP RenamedSourceHook where
+  exactP (RenamedSourceHook (decls,imps,mexp,_docs) parsed) = do
+    let
+      getSigs  (GHC.ValBindsOut _ sigs) = sigs
+      getDecls (GHC.ValBindsOut ds _) = concatMap GHC.bagToList $ map snd ds
+      getTycl  (GHC.TyClGroup ds _) = ds
+      getWarnindDs ds = filter (\d -> case d of
+                                       (GHC.L _ (GHC.WarningD _)) -> True
+                                       _ -> False) ds
 
-      case mmn of
-        Just (GHC.L _ mn) -> do
-          printStringAtMaybeAnn (G GHC.AnnModule) "module" -- `debug` ("exactP.HsModule:cs=" ++ show cs)
-          printStringAtMaybeAnn (G GHC.AnnVal) (GHC.moduleNameString mn)
-        Nothing -> return ()
+      rmImplicits is = filter (\(GHC.L _ (GHC.ImportDecl _ _ _ _ _ _ isImplicit _ _)) -> isImplicit) is
 
-      case mdepr of
-        Nothing -> return ()
-        Just depr -> exactPC depr
+      doIt (GHC.L _ (GHC.HsModule mmn _mexp _imps hsdecls mdepr _haddock)) = do
 
-      case mexp of
-        Just lexps -> do
-          return () `debug` ("about to exactPC lexps")
-          mapM_ exactPC lexps
-          return ()
-        Nothing -> return ()
+        case mmn of
+          Just (GHC.L _ mn) -> do
+            printStringAtMaybeAnn (G GHC.AnnModule) "module" -- `debug` ("exactP.HsModule:cs=" ++ show cs)
+            printStringAtMaybeAnn (G GHC.AnnVal) (GHC.moduleNameString mn)
+          Nothing -> return ()
 
-      printStringAtMaybeAnn (G GHC.AnnWhere) "where"
-      printStringAtMaybeAnn (G GHC.AnnOpenC)  "{"
-      printStringAtMaybeAnnAll (G GHC.AnnSemi) ";" -- possible leading semis
-      exactP imps
+        case mdepr of
+          Nothing -> return ()
+          Just depr -> exactPC depr
 
-      applyListPrint
-           (  prepareListPrint (getSigs $ GHC.hs_valds decls)
-           ++ prepareListPrint (getDecls $ GHC.hs_valds decls)
-           ++ prepareListPrint (GHC.hs_splcds decls)
-           ++ prepareListPrint (concatMap getTycl $ GHC.hs_tyclds decls)
-           ++ prepareListPrint (GHC.hs_instds decls)
-           ++ prepareListPrint (GHC.hs_fixds decls)
-           ++ prepareListPrint (GHC.hs_defds decls)
-           ++ prepareListPrint (GHC.hs_fords decls)
-           ++ prepareListPrint (GHC.hs_warnds decls)
-           ++ prepareListPrint (GHC.hs_annds decls)
-           ++ prepareListPrint (GHC.hs_ruleds decls)
-           ++ prepareListPrint (GHC.hs_vects decls)
-           ++ prepareListPrint (GHC.hs_docs decls)
-           -- ++ prepareListPrint imps
-           -- ++ prepareListPrint (maybe [] id mexp)
-           -- ++ prepareListPrint docs
-           )
+        case mexp of
+          Just lexps -> do
+            return () `debug` ("about to exactPC lexps")
+            mapM_ exactPC lexps
+            return ()
+          Nothing -> return ()
 
-      printStringAtMaybeAnn (G GHC.AnnCloseC) "}"
+        printStringAtMaybeAnn (G GHC.AnnWhere) "where"
+        printStringAtMaybeAnn (G GHC.AnnOpenC)  "{"
+        printStringAtMaybeAnnAll (G GHC.AnnSemi) ";" -- possible leading semis
+        exactP (rmImplicits imps)
 
-      -- put the end of file whitespace in
-      printStringAtMaybeAnn (G GHC.AnnEofPos) ""
-  in
-    runEP (loadInitialComments >> doIt parsed) (GHC.getLoc parsed) [] an
+        applyListPrint
+             (  prepareListPrint (getSigs $ GHC.hs_valds decls)
+             ++ prepareListPrint (getDecls $ GHC.hs_valds decls)
+             ++ prepareListPrint (GHC.hs_splcds decls)
+             ++ prepareListPrint (concatMap getTycl $ GHC.hs_tyclds decls)
+             ++ prepareListPrint (GHC.hs_instds decls)
+             ++ prepareListPrint (GHC.hs_fixds decls)
+             ++ prepareListPrint (GHC.hs_defds decls)
+             ++ prepareListPrint (GHC.hs_fords decls)
+             ++ prepareListPrint (GHC.hs_warnds decls)
+             ++ prepareListPrint (GHC.hs_annds decls)
+             ++ prepareListPrint (GHC.hs_ruleds decls)
+             ++ prepareListPrint (GHC.hs_vects decls)
+             ++ prepareListPrint (GHC.hs_docs decls)
+             ++ prepareListPrint (getWarnindDs hsdecls)
+             -- ++ prepareListPrint imps
+             -- ++ prepareListPrint (maybe [] id mexp)
+             -- ++ prepareListPrint docs
+             )
+
+        printStringAtMaybeAnn (G GHC.AnnCloseC) "}"
+
+        -- put the end of file whitespace in
+        printStringAtMaybeAnn (G GHC.AnnEofPos) ""
+
+    doIt parsed
 
 -- ---------------------------------------------------------------------
 
@@ -465,6 +480,7 @@ exactPC a@(GHC.L l ast) =
              return (dp,fromValue mfn)
 
        pushMfn mfn
+       return () `debug` ("exactPC:offset=" ++ show offset)
        pushOffset offset
        do
          exactP ast

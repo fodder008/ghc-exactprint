@@ -27,6 +27,7 @@ module Language.Haskell.GHC.ExactPrint.Types
   , unConName
 
   , ResTyGADTHook(..)
+  , RenamedSourceHook(..)
 
   , AnnKey
   , AnnKeyF
@@ -162,6 +163,11 @@ instance (GHC.OutputableBndr name) => GHC.Outputable (ResTyGADTHook name) where
 
 -- ---------------------------------------------------------------------
 
+data RenamedSourceHook = RenamedSourceHook GHC.RenamedSource GHC.ParsedSource
+                   deriving (Typeable,Data)
+
+-- ---------------------------------------------------------------------
+
 mkAnnKeyEP :: (Data a) => GHC.Located a -> AnnKey
 mkAnnKeyEP (GHC.L l a) = (l,annGetConstr a)
 
@@ -188,20 +194,11 @@ newtype Key = Key Value
 
 data Value = forall a . (Show a,Typeable a, GHC.Outputable a) => Value a
 
--- newKey :: (Eq a, Show a, Typeable a, Outputable a) => a -> Key
--- newKey = Key . newValue
-
 newValue :: (Show a, Typeable a, GHC.Outputable a) => a -> Value
 newValue = Value
 
--- typeKey :: Key -> TypeRep
--- typeKey (Key v) = typeValue v
-
 typeValue :: Value -> TypeRep
 typeValue (Value x) = typeOf x
-
--- fromKey :: Typeable a => Key -> a
--- fromKey (Key v) = fromValue v
 
 fromValue :: Typeable a => Value -> a
 fromValue (Value x) = fromMaybe (error errMsg) $ res

@@ -291,13 +291,16 @@ getAndRemoveMaybeFunId :: AP Value
 getAndRemoveMaybeFunId = do
   ss <- getSrcSpanAP
   (Extra b mfs) <- getExtra
-  let (ssm,v) = head mfs
-  if ss == ssm
-     then do
-       setExtra (Extra b (tail mfs))
-       return v
-     else do
-       return (newValue emptyFunId)
+  if null mfs
+    then return (newValue emptyFunId)
+    else do
+      let (ssm,v) = ghead "getAndRemoveMaybeFunId" mfs
+      if ss == ssm
+         then do
+           setExtra (Extra b (tail mfs))
+           return v
+         else do
+           return (newValue emptyFunId)
 
 -- -------------------------------------
 
