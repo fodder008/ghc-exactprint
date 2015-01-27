@@ -159,7 +159,6 @@ tt = do
     manipulateAstTest False "tests/examples/ImportsSemi.hs"           "ImportsSemi"
     manipulateAstTest False "tests/examples/Stmts.hs"                 "Stmts"
     manipulateAstTest False "tests/examples/Mixed.hs"                 "Main"
-    manipulateAstTest False "tests/examples/Arrow.hs"                 "Arrow"
     manipulateAstTest False "tests/examples/PatSynBind.hs"            "Main"
     manipulateAstTest False "tests/examples/HsDo.hs"                  "HsDo"
     manipulateAstTest False "tests/examples/ForAll.hs"                "ForAll"
@@ -178,7 +177,6 @@ tt = do
     manipulateAstTest False "tests/examples/RankNTypes.hs"            "Main"
     manipulateAstTest False "tests/examples/Existential.hs"           "Main"
     manipulateAstTest False "tests/examples/ScopedTypeVariables.hs"   "Main"
-    manipulateAstTest False "tests/examples/Arrows.hs"                "Main"
     manipulateAstTest False "tests/examples/TH.hs"                    "Main"
     manipulateAstTest False "tests/examples/StaticPointers.hs"        "Main"
     manipulateAstTest False "tests/examples/DataDecl.hs"              "Main"
@@ -216,8 +214,12 @@ tt = do
     manipulateAstTest False "tests/examples/LetExprSemi.hs"           "LetExprSemi"
     manipulateAstTest False "tests/examples/LayoutLet.hs"             "Main"
     manipulateAstTest False "tests/examples/DocDecls.hs"              "DocDecls"
+    manipulateAstTest False "tests/examples/Deprecation.hs"           "Deprecation"
+    manipulateAstTest False "tests/examples/BCase.hs"                 "Main"
+    manipulateAstTest False "tests/examples/Arrows.hs"                "Main"
 -}
-    manipulateAstTest True "tests/examples/Deprecation.hs"           "Deprecation"
+    manipulateAstTest True "tests/examples/Arrow.hs"                 "Arrow"
+
 {-
     manipulateAstTest False "tests/examples/Cpp.hs"                   "Main"
     manipulateAstTest False "tests/examples/Lhs.lhs"                  "Main"

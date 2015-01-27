@@ -199,6 +199,10 @@ pushSrcSpan ss = EP (\l dp sss cs st an -> ((),l,dp,(ss:sss),cs,st,an,id))
 popSrcSpan :: EP ()
 popSrcSpan = EP (\l dp (_:sss) cs st an -> ((),l,dp,sss,cs,st,an,id))
 
+getSrcSpanEP :: EP GHC.SrcSpan
+getSrcSpanEP = EP (\l dp (ss:sss) cs st an -> (ss,l,dp,(ss:sss),cs,st,an,id))
+
+-- ---------------------------------------------------------------------
 
 getAnnotation :: (Data a) => GHC.Located a -> EP (Maybe Annotation)
 getAnnotation a  = EP (\l dp s cs st an -> (getAnnotationEP (anEP an) a
@@ -389,7 +393,7 @@ instance ExactP RenamedSourceHook where
                                        (GHC.L _ (GHC.WarningD _)) -> True
                                        _ -> False) ds
 
-      rmImplicits is = filter (\(GHC.L _ (GHC.ImportDecl _ _ _ _ _ _ isImplicit _ _)) -> isImplicit) is
+      rmImplicits is = filter (\(GHC.L _ (GHC.ImportDecl _ _ _ _ _ _ isImplicit _ _)) -> not isImplicit) is
 
       doIt (GHC.L _ (GHC.HsModule mmn _mexp _imps hsdecls mdepr _haddock)) = do
 
@@ -414,9 +418,10 @@ instance ExactP RenamedSourceHook where
         printStringAtMaybeAnn (G GHC.AnnOpenC)  "{"
         printStringAtMaybeAnnAll (G GHC.AnnSemi) ";" -- possible leading semis
         exactP (rmImplicits imps)
+        return () `debug` ("exactPrintRenamed: rmImplicits imps=" ++ showGhc (rmImplicits imps))
 
         applyListPrint
-             (  prepareListPrint (getSigs $ GHC.hs_valds decls)
+             (  prepareListPrint (getSigs  $ GHC.hs_valds decls)
              ++ prepareListPrint (getDecls $ GHC.hs_valds decls)
              ++ prepareListPrint (GHC.hs_splcds decls)
              ++ prepareListPrint (concatMap getTycl $ GHC.hs_tyclds decls)
@@ -474,7 +479,7 @@ exactPC a@(GHC.L l ast) =
        ma <- getAndRemoveAnnotation a
        (offset,mfn) <- case ma of
          Nothing -> return (DP (0,0),Nothing)
-           `debug` ("exactPC:no annotation for " ++ show (ss2span l,typeOf ast))
+           `debug` ("exactPC:no annotation for " ++ show (showGhc l,annGetConstr ast))
          Just (Ann lcs mfn dp) -> do
              mergeComments lcs `debug` ("exactPC:(l,lcs,dp):" ++ show (showGhc l,lcs,dp))
              return (dp,fromValue mfn)
@@ -651,6 +656,23 @@ doMaybe f ma = case ma of
 instance (GHC.Outputable name,GHC.DataId name,ExactP name,ToString name)
   => ExactP (GHC.HsDecl name) where
   exactP decl = case decl of
+    GHC.TyClD d       -> getSrcSpanEP >>= \l -> exactPC (GHC.L l d)
+    GHC.InstD d       -> getSrcSpanEP >>= \l -> exactPC (GHC.L l d)
+    GHC.DerivD d      -> getSrcSpanEP >>= \l -> exactPC (GHC.L l d)
+    GHC.ValD d        -> getSrcSpanEP >>= \l -> exactPC (GHC.L l d)
+    GHC.SigD d        -> getSrcSpanEP >>= \l -> exactPC (GHC.L l d)
+    GHC.DefD d        -> getSrcSpanEP >>= \l -> exactPC (GHC.L l d)
+    GHC.ForD d        -> getSrcSpanEP >>= \l -> exactPC (GHC.L l d)
+    GHC.WarningD d    -> getSrcSpanEP >>= \l -> exactPC (GHC.L l d)
+    GHC.AnnD d        -> getSrcSpanEP >>= \l -> exactPC (GHC.L l d)
+    GHC.RuleD d       -> getSrcSpanEP >>= \l -> exactPC (GHC.L l d)
+    GHC.VectD d       -> getSrcSpanEP >>= \l -> exactPC (GHC.L l d)
+    GHC.SpliceD d     -> getSrcSpanEP >>= \l -> exactPC (GHC.L l d)
+    GHC.DocD d        -> getSrcSpanEP >>= \l -> exactPC (GHC.L l d)
+    GHC.QuasiQuoteD d -> getSrcSpanEP >>= \l -> exactPC (GHC.L l d)
+    GHC.RoleAnnotD d  -> getSrcSpanEP >>= \l -> exactPC (GHC.L l d)
+
+{-
     GHC.TyClD d       -> exactP d
     GHC.InstD d       -> exactP d
     GHC.DerivD d      -> exactP d
@@ -666,6 +688,7 @@ instance (GHC.Outputable name,GHC.DataId name,ExactP name,ToString name)
     GHC.DocD d        -> exactP d
     GHC.QuasiQuoteD d -> exactP d
     GHC.RoleAnnotD d  -> exactP d
+-}
 
 -- ---------------------------------------------------------------------
 

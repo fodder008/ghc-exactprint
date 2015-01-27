@@ -683,21 +683,21 @@ instance (Show name,GHC.DataId name,GHC.OutputableBndr name,AnnotateP name)
   => AnnotateP (GHC.HsDecl name) where
   annotateP l decl = do
     case decl of
-      GHC.TyClD d       -> annotateP l d
-      GHC.InstD d       -> annotateP l d
-      GHC.DerivD d      -> annotateP l d
-      GHC.ValD d        -> annotateP l d
-      GHC.SigD d        -> annotateP l d
-      GHC.DefD d        -> annotateP l d
-      GHC.ForD d        -> annotateP l d
-      GHC.WarningD d    -> annotateP l d
-      GHC.AnnD d        -> annotateP l d
-      GHC.RuleD d       -> annotateP l d
-      GHC.VectD d       -> annotateP l d
-      GHC.SpliceD d     -> annotateP l d
-      GHC.DocD d        -> annotateP l d
-      GHC.QuasiQuoteD d -> annotateP l d
-      GHC.RoleAnnotD d  -> annotateP l d
+      GHC.TyClD d       -> annotatePC (GHC.L l d)
+      GHC.InstD d       -> annotatePC (GHC.L l d)
+      GHC.DerivD d      -> annotatePC (GHC.L l d)
+      GHC.ValD d        -> annotatePC (GHC.L l d)
+      GHC.SigD d        -> annotatePC (GHC.L l d)
+      GHC.DefD d        -> annotatePC (GHC.L l d)
+      GHC.ForD d        -> annotatePC (GHC.L l d)
+      GHC.WarningD d    -> annotatePC (GHC.L l d)
+      GHC.AnnD d        -> annotatePC (GHC.L l d)
+      GHC.RuleD d       -> annotatePC (GHC.L l d)
+      GHC.VectD d       -> annotatePC (GHC.L l d)
+      GHC.SpliceD d     -> annotatePC (GHC.L l d)
+      GHC.DocD d        -> annotatePC (GHC.L l d)
+      GHC.QuasiQuoteD d -> annotatePC (GHC.L l d)
+      GHC.RoleAnnotD d  -> annotatePC (GHC.L l d)
 
 -- ---------------------------------------------------------------------
 

@@ -106,8 +106,15 @@ anF  (_,f) = f
 data AnnConName = CN String
                  deriving (Eq,Show,Ord)
 
+-- Note: We need to make sure that "HsBindLR RdrName RdrName" and
+-- "HsBindLR Name Name" are both recognised, so chop on first blank
 annGetConstr :: (Data a) => a -> AnnConName
-annGetConstr a = CN (show $ toConstr a)
+annGetConstr a = CN (cleanup $ takeWhile (/=' ') $ show $ toConstr a)
+  where
+    cleanup "LastStmt"        = "BodyStmt"
+    cleanup "Name"            = "RdrName"
+    cleanup "{abstract:Name}" = "Unqual"
+    cleanup x          = x
 
 unConName :: AnnConName -> String
 unConName (CN s) = s
