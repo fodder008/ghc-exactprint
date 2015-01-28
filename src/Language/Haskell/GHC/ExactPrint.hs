@@ -117,11 +117,11 @@ newtype EP x = EP (Pos -> [(Int,DeltaPos)] -> [GHC.SrcSpan] -> [Comment] -> Extr
 
 data Extra = E { eFunId :: (Bool,String) -- (isSymbol,name)
                , eFunIsInfix :: Bool
-               , eMaybeFunId :: [Value]
+               , eMaybeFunId :: [Maybe Value]
                }
 
 initExtra :: Extra
-initExtra = E (False,"") False [newValue emptyFunId]
+initExtra = E (False,"") False [Nothing]
 
 instance Functor EP where
   fmap = liftM
@@ -171,14 +171,14 @@ popOffset = EP (\l (_o:dp) s cs st an -> ((),l,dp,s,cs,st,an,id)
                )
 -- ---------------------------------------------------------------------
 
-pushMfn :: MaybeFunId -> EP ()
-pushMfn mfn = EP (\l dps s cs st an ->
+pushExtra :: Maybe Value -> EP ()
+pushExtra mv = EP (\l dps s cs st an ->
   let
-    st' = st { eMaybeFunId = (newValue mfn) : (eMaybeFunId st) }
+    st' = st { eMaybeFunId = mv : (eMaybeFunId st) }
   in ((),l,dps,s,cs,st',an,id))
 
-popMfn :: EP ()
-popMfn = EP (\l dp s cs st an ->
+popExtra :: EP ()
+popExtra = EP (\l dp s cs st an ->
   let
     st' = case eMaybeFunId st of
       (h:t) -> st { eMaybeFunId = t }
@@ -187,9 +187,18 @@ popMfn = EP (\l dp s cs st an ->
 getMaybeFunId :: EP MaybeFunId
 getMaybeFunId = EP (\l dp s cs st an ->
   let
-    mfn = case eMaybeFunId st of
-      (h:t) -> toMfn h
+    mfn = case (ghead ("getMaybeFunId:no MaybeFunId found:" ++ show l) (eMaybeFunId st)) of
+            Nothing -> error $ "getMaybeFunId:no MaybeFunId found"
+            Just v -> toMfn v
   in (mfn,l,dp,s,cs,st,an,id))
+
+getExtraRdrName :: EP (Maybe GHC.RdrName)
+getExtraRdrName = EP (\l dp s cs st an ->
+  let
+    rdr = case (ghead ("getExtraRdrName:no RdrName found:" ++ show l) (eMaybeFunId st)) of
+            Nothing -> Nothing
+            Just v -> Just (fromValue v)
+  in (rdr,l,dp,s,cs,st,an,id))
 
 -- ---------------------------------------------------------------------
 
@@ -388,14 +397,15 @@ instance ExactP RenamedSourceHook where
     let
       getSigs  (GHC.ValBindsOut _ sigs) = sigs
       getDecls (GHC.ValBindsOut ds _) = concatMap GHC.bagToList $ map snd ds
-      getTycl  (GHC.TyClGroup ds _) = ds
+      getTycl      (GHC.TyClGroup ds _) = ds
+      getTyclRoles (GHC.TyClGroup _ rs) = rs
       getWarnindDs ds = filter (\d -> case d of
                                        (GHC.L _ (GHC.WarningD _)) -> True
                                        _ -> False) ds
 
       rmImplicits is = filter (\(GHC.L _ (GHC.ImportDecl _ _ _ _ _ _ isImplicit _ _)) -> not isImplicit) is
 
-      doIt (GHC.L _ (GHC.HsModule mmn _mexp _imps hsdecls mdepr _haddock)) = do
+      doIt (GHC.L _ (GHC.HsModule mmn p_mexp _imps hsdecls mdepr _haddock)) = do
 
         case mmn of
           Just (GHC.L _ mn) -> do
@@ -407,12 +417,12 @@ instance ExactP RenamedSourceHook where
           Nothing -> return ()
           Just depr -> exactPC depr
 
-        case mexp of
-          Just lexps -> do
+        case (mexp,p_mexp) of
+          (Just lexps,Just (GHC.L le _)) -> do
             return () `debug` ("about to exactPC lexps")
-            mapM_ exactPC lexps
+            exactPC (GHC.L le (GHC.sortLocated lexps))
             return ()
-          Nothing -> return ()
+          _ -> return ()
 
         printStringAtMaybeAnn (G GHC.AnnWhere) "where"
         printStringAtMaybeAnn (G GHC.AnnOpenC)  "{"
@@ -425,6 +435,7 @@ instance ExactP RenamedSourceHook where
              ++ prepareListPrint (getDecls $ GHC.hs_valds decls)
              ++ prepareListPrint (GHC.hs_splcds decls)
              ++ prepareListPrint (concatMap getTycl $ GHC.hs_tyclds decls)
+             ++ prepareListPrint (concatMap getTyclRoles $ GHC.hs_tyclds decls)
              ++ prepareListPrint (GHC.hs_instds decls)
              ++ prepareListPrint (GHC.hs_fixds decls)
              ++ prepareListPrint (GHC.hs_defds decls)
@@ -472,19 +483,19 @@ loadInitialComments = do
   return ()
 
 -- |First move to the given location, then call exactP
-exactPC :: (Data ast,ExactP ast) => GHC.Located ast -> EP ()
+exactPC :: (ExactP ast) => GHC.Located ast -> EP ()
 exactPC a@(GHC.L l ast) =
     do pushSrcSpan l `debug` ("exactPC entered for:" ++ showGhc l)
        -- ma <- getAnnotation a
        ma <- getAndRemoveAnnotation a
-       (offset,mfn) <- case ma of
+       (offset,mextra) <- case ma of
          Nothing -> return (DP (0,0),Nothing)
            `debug` ("exactPC:no annotation for " ++ show (showGhc l,annGetConstr ast))
          Just (Ann lcs mfn dp) -> do
              mergeComments lcs `debug` ("exactPC:(l,lcs,dp):" ++ show (showGhc l,lcs,dp))
-             return (dp,fromValue mfn)
+             return (dp,Just mfn)
 
-       pushMfn mfn
+       pushExtra mextra
        return () `debug` ("exactPC:offset=" ++ show offset)
        pushOffset offset
        do
@@ -492,7 +503,7 @@ exactPC a@(GHC.L l ast) =
          printStringAtMaybeAnn (G GHC.AnnComma) ","
          printStringAtMaybeAnnAll AnnSemiSep ";"
        popOffset
-       popMfn
+       popExtra
 
        popSrcSpan
 
@@ -1810,8 +1821,20 @@ instance (GHC.Outputable name,GHC.DataId name,ExactP name,ToString name)
 -- ---------------------------------------------------------------------
 
 instance ExactP GHC.RdrName where
+  exactP n = exactpRdrName (rdrName2String n)
+
+instance ExactP GHC.Name where
   exactP n = do
-    case rdrName2String n of
+    ss <- getSrcSpanEP
+    return () `debug` ("exactP.Name:ss=" ++ showGhc ss)
+    mn <- getExtraRdrName
+    case mn of
+       Just rn -> exactpRdrName (rdrName2String rn)
+       Nothing -> exactpRdrName (showGhc n)
+
+exactpRdrName :: String -> EP ()
+exactpRdrName nstr = do
+    case nstr of
       "[]" -> do
         printStringAtMaybeAnn (G GHC.AnnOpenS) "["
         printStringAtMaybeAnn (G GHC.AnnCloseS) "]"
@@ -1837,33 +1860,6 @@ instance ExactP GHC.RdrName where
         printStringAtMaybeAnn (G GHC.AnnCloseP)    ")"
         return () `debug` ("exactP.RdrName:n=" ++ str)
 
-instance ExactP GHC.Name where
-  exactP n = do
-    case name2String n of
-      "[]" -> do
-        printStringAtMaybeAnn (G GHC.AnnOpenS) "["
-        printStringAtMaybeAnn (G GHC.AnnCloseS) "]"
-      "()" -> do
-        printStringAtMaybeAnn (G GHC.AnnOpenP) "("
-        printStringAtMaybeAnn (G GHC.AnnCloseP) ")"
-      "(##)" -> do
-        printStringAtMaybeAnn (G GHC.AnnOpen) "(#"
-        printStringAtMaybeAnn (G GHC.AnnClose) "#)"
-      "[::]" -> do
-        printStringAtMaybeAnn (G GHC.AnnOpen) "[:"
-        printStringAtMaybeAnn (G GHC.AnnClose) ":]"
-      str ->  do
-        printStringAtMaybeAnn (G GHC.AnnType)      "type"
-        printStringAtMaybeAnn (G GHC.AnnOpenP)     "("
-        printStringAtMaybeAnn (G GHC.AnnBackquote)  "`"
-        printStringAtMaybeAnn (G GHC.AnnTildehsh)  "~#"
-        printStringAtMaybeAnn (G GHC.AnnTilde)     "~"
-        printStringAtMaybeAnn (G GHC.AnnRarrow)    "->"
-        printStringAtMaybeAnn (G GHC.AnnVal)       str
-        printStringAtMaybeAnn (G GHC.AnnBackquote) "`"
-        printStringAtMaybeAnnAll (G GHC.AnnCommaTuple) "," -- For '(,,,)'
-        printStringAtMaybeAnn (G GHC.AnnCloseP)    ")"
-        return () `debug` ("exactP.Name:n=" ++ str)
 
 instance ExactP GHC.HsIPName where
   exactP (GHC.HsIPName n) = do

@@ -154,7 +154,6 @@ tt = do
     manipulateAstTest False "tests/examples/Warning.hs"               "Warning"
     manipulateAstTest False "tests/examples/Annotations.hs"           "Annotations"
     manipulateAstTestTH False "tests/examples/QuasiQuote.hs"          "QuasiQuote"
-    manipulateAstTest False "tests/examples/Roles.hs"                 "Roles"
     manipulateAstTest False "tests/examples/Splice.hs"                "Splice"
     manipulateAstTest False "tests/examples/ImportsSemi.hs"           "ImportsSemi"
     manipulateAstTest False "tests/examples/Stmts.hs"                 "Stmts"
@@ -179,7 +178,6 @@ tt = do
     manipulateAstTest False "tests/examples/ScopedTypeVariables.hs"   "Main"
     manipulateAstTest False "tests/examples/TH.hs"                    "Main"
     manipulateAstTest False "tests/examples/StaticPointers.hs"        "Main"
-    manipulateAstTest False "tests/examples/DataDecl.hs"              "Main"
     manipulateAstTest False "tests/examples/Guards.hs"                "Main"
     manipulateAstTest False "tests/examples/RebindableSyntax.hs"      "Main"
     manipulateAstTest False "tests/examples/RdrNames.hs"              "RdrNames"
@@ -217,8 +215,11 @@ tt = do
     manipulateAstTest False "tests/examples/Deprecation.hs"           "Deprecation"
     manipulateAstTest False "tests/examples/BCase.hs"                 "Main"
     manipulateAstTest False "tests/examples/Arrows.hs"                "Main"
+    manipulateAstTest False  "tests/examples/Arrow.hs"                 "Arrow"
+    manipulateAstTest False "tests/examples/Trit.hs"                  "Trit"
+    manipulateAstTest False "tests/examples/Roles.hs"                 "Roles"
 -}
-    manipulateAstTest True "tests/examples/Arrow.hs"                 "Arrow"
+    manipulateAstTest True "tests/examples/DataDecl.hs"              "Main"
 
 {-
     manipulateAstTest False "tests/examples/Cpp.hs"                   "Main"
@@ -265,14 +266,20 @@ manipulateAstTest' useTH useRenamed file modname = do
               else printed ++ "\n==============\n"
                     ++ "lengths:" ++ show (length printed,length contents) ++ "\n"
                     ++ parsedAST
+
   -- putStrLn $ "Test:parsed=" ++ parsedAST
-  writeFile out $ result
   -- putStrLn $ "Test:ann organised:" ++ showGhc (organiseAnns ann)
+
+  putStrLn $ "\n===============================================================\n"
   putStrLn $ "Test:showdata:parsed" ++ showAnnData (organiseAnns ann) 0 parsed
   putStrLn $ "\n===============================================================\n"
-  putStrLn $ "Test:showdata:renamed" ++ showAnnData (organiseAnns ann) 0 renamed
+  -- putStrLn $ "Test:showdata:renamed" ++ showAnnData (organiseAnns ann) 0 renamed
+  putStrLn $ "Test:showdata:renamed" ++ (SYB.showData SYB.Renamer 0 renamed)
   putStrLn $ "\n===============================================================\n"
   -- putStrLn $ "Test:ann:" ++ showGhc ann
+
+
+  writeFile out $ result
 
   return ("Match\n"  == result)
 

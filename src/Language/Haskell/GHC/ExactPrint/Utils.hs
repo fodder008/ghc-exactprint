@@ -281,20 +281,20 @@ getExtra = AP (\l pe e ga -> (e,l,pe,e,ga,mempty))
 
 -- -------------------------------------
 
-setMaybeFunId :: Value -> AP ()
-setMaybeFunId mfn = do
+setExtraAnn :: Value -> AP ()
+setExtraAnn mfn = do
   ss <- getSrcSpanAP
   (Extra v mfs) <- getExtra
   setExtra (Extra v ((ss,mfn):mfs))
 
-getAndRemoveMaybeFunId :: AP Value
-getAndRemoveMaybeFunId = do
+getAndRemoveExtraAnn :: AP Value
+getAndRemoveExtraAnn = do
   ss <- getSrcSpanAP
   (Extra b mfs) <- getExtra
   if null mfs
     then return (newValue emptyFunId)
     else do
-      let (ssm,v) = ghead "getAndRemoveMaybeFunId" mfs
+      let (ssm,v) = ghead "getAndRemoveExtraAnn" mfs
       if ss == ssm
          then do
            setExtra (Extra b (tail mfs))
@@ -335,7 +335,7 @@ leaveAST = do
 
   -- let dp = deltaFromSrcSpans priorEnd ss
   dp <- getCurrentDP
-  mfn <- getAndRemoveMaybeFunId
+  mfn <- getAndRemoveExtraAnn
   addAnnotationsAP (Ann lcs mfn dp) `debug` ("leaveAST:(ss,lcs,dp)=" ++ show (showGhc ss,lcs,dp))
   popSrcSpanAP
   return () `debug` ("leaveAST:(ss,dp,priorEnd)=" ++ show (ss2span ss,dp,ss2span priorEnd))
@@ -613,6 +613,7 @@ instance (GHC.DataId name,AnnotateP name)
 
 instance AnnotateP GHC.RdrName where
   annotateP l n = do
+    setExtraAnn (newValue n)
     case rdrName2String n of
       "[]" -> do
         addDeltaAnnotation GHC.AnnOpenS -- '[' nonBUG
@@ -1038,7 +1039,7 @@ instance (Show name,GHC.DataId name,GHC.OutputableBndr name,AnnotateP name,
   => AnnotateP (GHC.Match name (GHC.Located body)) where
 
   annotateP _ (GHC.Match mln pats _typ (GHC.GRHSs grhs lb)) = do
-    setMaybeFunId (newValue mln)
+    setExtraAnn (newValue mln)
     isInfix <- getFunIsInfix
     let
       get_infix Nothing = isInfix
@@ -2325,7 +2326,7 @@ isSymbolName n = GHC.isSymOcc $ GHC.getOccName n
 rdrName2String :: GHC.RdrName -> String
 rdrName2String r =
   case GHC.isExact_maybe r of
-    Just n  -> name2String n
+    Just n  -> showGhc n
     Nothing ->
       case r of
         GHC.Unqual _occ -> GHC.occNameString $ GHC.rdrNameOcc r
@@ -2333,7 +2334,11 @@ rdrName2String r =
                             ++ (GHC.occNameString $ GHC.rdrNameOcc r)
 
 name2String :: GHC.Name -> String
-name2String name = showGhc name
+-- name2String name = showGhc name
+name2String name = GHC.occNameString $ GHC.occName name
+-- name2String name = rdrName2String (GHC.nameRdrName name)
+
+-- ---------------------------------------------------------------------
 
 -- |Show a GHC API structure
 showGhc :: (GHC.Outputable a) => a -> String

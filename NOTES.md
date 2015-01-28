@@ -103,3 +103,36 @@ is a problem with preceding comments.
 
 
 
+### RenamedSource vs ParsedSource
+
+It is easier to transform the AST for `RenamedSource`, as the names are
+fully disambiguated.  However, the Name value no longer has the detail
+of the original RdrName in terms of round tripping the source.
+
+So there are three options
+
+1. Capture the `Located RdrName` values in a separate map when doing
+   the initial `annotateAST` pass, so they can be used for generating
+   output using the `RenamedSource`.
+
+2. Perform a pass over the `RenamedSource` to capture all the `Located
+   Name` values so that they are available in AST manipulation code,
+   and generate output from the `ParsedSource`.
+
+3. Capture the `Located RdrName` values as part of the `SrcSpan`
+   annotation for the `RdrName` `AnnotateP` instance, and generate
+   output from the `RenamedSource`.
+
+Option 1 has two advantages, (1) we are already doing a full traversal
+over the `ParsedSource`, so it is relatively cheap to pick up the
+`Located RdrName`s, and (2) The AST manipulator should not have to
+write AST update code that has to call out to a separate API to
+identify names.
+
+Option 2 is in some senses simpler, and can work even if the renamer
+fails.
+
+Option 3 seems most workable, given the existing infrastructure to
+store an arbitrary `Value` in the `Annotation`.
+
+
