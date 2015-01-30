@@ -135,4 +135,55 @@ fails.
 Option 3 seems most workable, given the existing infrastructure to
 store an arbitrary `Value` in the `Annotation`.
 
+### ConDecl / PrefixCon changes through renamer
 
+It goes from
+
+
+          (PrefixCon
+           [])
+          (ResTyGADT {tests/examples/DataDecl.hs:21:16-26}
+           (L {tests/examples/DataDecl.hs:21:16-26}
+           (L {tests/examples/DataDecl.hs:21:16-26}
+            (HsFunTy
+             (L {tests/examples/DataDecl.hs:21:16-18}
+              (HsTyVar
+               (Unqual {OccName: Int})))
+             (L {tests/examples/DataDecl.hs:21:23-26}
+              (HsAppTy
+               (L {tests/examples/DataDecl.hs:21:23-24}
+                (HsTyVar
+                 (Unqual {OccName: G1})))
+               (L {tests/examples/DataDecl.hs:21:26}
+                (HsTyVar
+                 (Unqual {OccName: a}))))))))
+
+to
+
+
+           (PrefixCon
+            [
+             (L {tests/examples/DataDecl.hs:21:16-18}
+              (HsTyVar {Name: Int}))])
+           (ResTyGADT {tests/examples/DataDecl.hs:21:16-26}
+            (L {tests/examples/DataDecl.hs:21:23-26}
+             (HsAppTy
+              (L {tests/examples/DataDecl.hs:21:23-24}
+               (HsTyVar {Name: G1}))
+              (L {tests/examples/DataDecl.hs:21:26}
+               (HsTyVar {Name: a})))))
+
+So
+
+    PrefixCon []
+    ...
+    HsFunTy t1 t2
+
+becomes
+
+    PrefixCon [t1]
+    ..
+    t2
+
+For a ResTyGADT declaration the PrefixCon will always have [] when parsed,
+so can be used to distinguish Parsed from Renamed.

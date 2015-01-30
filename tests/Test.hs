@@ -148,7 +148,6 @@ tt = do
     manipulateAstTest False "tests/examples/TypeFamilies.hs"          "Main"
     manipulateAstTest False "tests/examples/MultiParamTypeClasses.hs" "Main"
     manipulateAstTest False "tests/examples/DataFamilies.hs"          "DataFamilies"
-    manipulateAstTest False "tests/examples/Deriving.hs"              "Main"
     manipulateAstTest False "tests/examples/Default.hs"               "Main"
     manipulateAstTest False "tests/examples/ForeignDecl.hs"           "ForeignDecl"
     manipulateAstTest False "tests/examples/Warning.hs"               "Warning"
@@ -169,8 +168,6 @@ tt = do
     manipulateAstTest False "tests/examples/Rules.hs"                 "Rules"
     manipulateAstTest False "tests/examples/TypeOperators.hs"         "Main"
     manipulateAstTest False "tests/examples/NullaryTypeClasses.hs"    "Main"
-    manipulateAstTest False "tests/examples/FunctionalDeps.hs"        "Main"
-    manipulateAstTest False "tests/examples/DerivingOC.hs"            "Main"
     manipulateAstTest False "tests/examples/GenericDeriving.hs"       "Main"
     manipulateAstTest False "tests/examples/OverloadedStrings.hs"     "Main"
     manipulateAstTest False "tests/examples/RankNTypes.hs"            "Main"
@@ -215,11 +212,14 @@ tt = do
     manipulateAstTest False "tests/examples/Deprecation.hs"           "Deprecation"
     manipulateAstTest False "tests/examples/BCase.hs"                 "Main"
     manipulateAstTest False "tests/examples/Arrows.hs"                "Main"
-    manipulateAstTest False  "tests/examples/Arrow.hs"                 "Arrow"
+    manipulateAstTest False "tests/examples/Arrow.hs"                 "Arrow"
     manipulateAstTest False "tests/examples/Trit.hs"                  "Trit"
     manipulateAstTest False "tests/examples/Roles.hs"                 "Roles"
+    manipulateAstTest False "tests/examples/Deriving.hs"              "Main"
+    manipulateAstTest False "tests/examples/FunctionalDeps.hs"        "Main"
+    manipulateAstTest False "tests/examples/DataDecl.hs"              "Main"
 -}
-    manipulateAstTest True "tests/examples/DataDecl.hs"              "Main"
+    manipulateAstTest True "tests/examples/DerivingOC.hs"            "Main"
 
 {-
     manipulateAstTest False "tests/examples/Cpp.hs"                   "Main"
@@ -268,7 +268,6 @@ manipulateAstTest' useTH useRenamed file modname = do
                     ++ parsedAST
 
   -- putStrLn $ "Test:parsed=" ++ parsedAST
-  -- putStrLn $ "Test:ann organised:" ++ showGhc (organiseAnns ann)
 
   putStrLn $ "\n===============================================================\n"
   putStrLn $ "Test:showdata:parsed" ++ showAnnData (organiseAnns ann) 0 parsed
@@ -277,6 +276,7 @@ manipulateAstTest' useTH useRenamed file modname = do
   putStrLn $ "Test:showdata:renamed" ++ (SYB.showData SYB.Renamer 0 renamed)
   putStrLn $ "\n===============================================================\n"
   -- putStrLn $ "Test:ann:" ++ showGhc ann
+  -- putStrLn $ "Test:ann organised:" ++ showGhc (organiseAnns ann)
 
 
   writeFile out $ result

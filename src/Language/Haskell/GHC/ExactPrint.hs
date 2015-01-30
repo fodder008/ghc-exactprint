@@ -238,6 +238,20 @@ getAnnFinal kw = EP (\l dp (s:ss) cs st (ane,anf) ->
                    (h:t) -> (h,Map.insert (s,kw) (reverse t) anf)
      in (r         ,l,dp,(s:ss),cs,st,(ane,anf'),id))
 
+-- |destructive get, hence use an annotation once only
+getAnnFinalS :: GHC.SrcSpan -> KeywordId -> EP [DeltaPos]
+getAnnFinalS s kw = EP (\l dp ss cs st (ane,anf) ->
+     let
+       (r,anf') = case Map.lookup (s,kw) anf of
+             Nothing -> ([],anf)
+             Just ds -> ([d],f')
+               where
+                 (d,f') = case reverse ds of
+                   [h]   -> (h,Map.delete (s,kw) anf)
+                   (h:t) -> (h,Map.insert (s,kw) (reverse t) anf)
+     in (r         ,l,dp,ss,cs,st,(ane,anf'),id))
+
+
 -- |non-destructive get, hence use an annotation once only
 peekAnnFinal :: KeywordId -> EP [DeltaPos]
 peekAnnFinal kw = EP (\l dp (s:ss) cs st (ane,anf) ->
@@ -434,9 +448,10 @@ instance ExactP RenamedSourceHook where
              (  prepareListPrint (getSigs  $ GHC.hs_valds decls)
              ++ prepareListPrint (getDecls $ GHC.hs_valds decls)
              ++ prepareListPrint (GHC.hs_splcds decls)
-             ++ prepareListPrint (concatMap getTycl $ GHC.hs_tyclds decls)
+             ++ prepareListPrint (concatMap getTycl      $ GHC.hs_tyclds decls)
              ++ prepareListPrint (concatMap getTyclRoles $ GHC.hs_tyclds decls)
              ++ prepareListPrint (GHC.hs_instds decls)
+             ++ prepareListPrint (GHC.sortLocated $ GHC.hs_derivds $ decls)
              ++ prepareListPrint (GHC.hs_fixds decls)
              ++ prepareListPrint (GHC.hs_defds decls)
              ++ prepareListPrint (GHC.hs_fords decls)
@@ -457,7 +472,6 @@ instance ExactP RenamedSourceHook where
         printStringAtMaybeAnn (G GHC.AnnEofPos) ""
 
     doIt parsed
-
 -- ---------------------------------------------------------------------
 
 exactPrintAnnotated ::
@@ -484,7 +498,10 @@ loadInitialComments = do
 
 -- |First move to the given location, then call exactP
 exactPC :: (ExactP ast) => GHC.Located ast -> EP ()
-exactPC a@(GHC.L l ast) =
+exactPC a = exactPCwith (return ()) a
+
+exactPCwith :: (ExactP ast) => EP () -> GHC.Located ast -> EP ()
+exactPCwith extra a@(GHC.L l ast) =
     do pushSrcSpan l `debug` ("exactPC entered for:" ++ showGhc l)
        -- ma <- getAnnotation a
        ma <- getAndRemoveAnnotation a
@@ -500,6 +517,7 @@ exactPC a@(GHC.L l ast) =
        pushOffset offset
        do
          exactP ast
+         extra -- Do any specific extra processing required
          printStringAtMaybeAnn (G GHC.AnnComma) ","
          printStringAtMaybeAnnAll AnnSemiSep ";"
        popOffset
@@ -1369,7 +1387,7 @@ instance (GHC.Outputable name,GHC.DataId name,ExactP name,ToString name)
 
     printStringAtMaybeAnn (G GHC.AnnDeriving) "deriving"
     printStringAtMaybeAnn (G GHC.AnnOpenP) "("
-    mapM_ exactPC typs
+    mapM_ exactPC (GHC.sortLocated typs)
     -- printStringAtMaybeAnn (G GHC.AnnUnit "()"
     printStringAtMaybeAnn (G GHC.AnnCloseP) ")"
     printStringAtMaybeAnn (G GHC.AnnDarrow) "=>"
@@ -2184,7 +2202,7 @@ instance (GHC.Outputable name,GHC.DataId name,ExactP name,ToString name)
           _ -> mapM_ exactPC lns
 
         case dets of
-          GHC.PrefixCon args -> mapM_ exactPC args
+          GHC.PrefixCon args -> return () -- mapM_ exactPC args
           GHC.RecCon fs -> do
             printStringAtMaybeAnn (G GHC.AnnOpenC) "{"
             exactPC fs
@@ -2195,6 +2213,15 @@ instance (GHC.Outputable name,GHC.DataId name,ExactP name,ToString name)
             exactPC a2
 
         printStringAtMaybeAnn (G GHC.AnnDcolon) "::"
+
+        -- After renaming the arg is the first part of the type
+        case dets of
+          GHC.PrefixCon args -> do
+            mapM_ exactPC  args
+            ma <- getAnnFinalS ls (G GHC.AnnRarrow)
+            printStringAtLsDelta ma "->"
+
+          _ -> return ()
 
         exactPC (GHC.L ls (ResTyGADTHook bndrs))
 
