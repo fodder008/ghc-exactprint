@@ -1,8 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE UndecidableInstances #-} -- for GHC.DataId
 module Language.Haskell.GHC.ExactPrint.Utils
   (
 
@@ -16,7 +12,6 @@ module Language.Haskell.GHC.ExactPrint.Utils
   , ss2posEnd
   , span2ss
   , undelta
-  , undeltaComment
   , rdrName2String
   , isSymbolRdrName
   , deltaFromSrcSpans
@@ -36,19 +31,13 @@ module Language.Haskell.GHC.ExactPrint.Utils
   , debugM
   , warn
 
-
-  , ghead
-  , glast
-  , gtail
-  , gfromJust
-
   ) where
 
 
-import Control.Monad.State
-import Data.Data
-import Data.Generics
-import Data.List
+import Control.Monad (when)
+import Data.Data (Data, toConstr, showConstr, cast)
+import Data.Generics (extQ, ext1Q, ext2Q, gmapQ)
+import Data.List (intersperse)
 
 import Language.Haskell.GHC.ExactPrint.Types
 
@@ -93,22 +82,6 @@ warn c _ = c
 isGoodDelta :: DeltaPos -> Bool
 isGoodDelta (DP (ro,co)) = ro >= 0 && co >= 0
 
--- | Apply the delta to the current position, taking into account the
--- current column offset
-undeltaComment :: Pos -> Int -> DComment -> Comment
-undeltaComment l con (DComment (dps,dpe) s) = r
-    -- `debug` ("undeltaComment:(l,con,dcomment,r)=" ++ show (l,con,dco,r))
-  where
-    r = Comment ((adj dps $ undelta l dps co),(adj dps $ undelta l dpe co)) s
-    co = con
-    dc = - con -- + (coo - con)
-
-    -- adj makes provision for the possible movement of the
-    -- surrounding context, and so applies the difference between the
-    -- original and current offsets
-    adj (DP (   0,_dco)) (row,c) = (row,c)
-    adj (DP (_dro,_dco)) (row,c) = (row,c + dc)
-
 -- | Create a delta covering the gap between the end of the first
 -- @SrcSpan@ and the start of the second.
 deltaFromSrcSpans :: GHC.SrcSpan -> GHC.SrcSpan -> DeltaPos
@@ -129,7 +102,7 @@ ss2deltaP (refl,refc) (l,c) = DP (lo,co)
 -- | Apply the delta to the current position, taking into account the
 -- current column offset if advancing to a new line
 undelta :: Pos -> DeltaPos -> ColOffset -> Pos
-undelta (l,c) (DP (dl,dc)) co = (fl,fc)
+undelta (l,c) (DP (dl,dc)) (ColOffset co) = (fl,fc)
   where
     fl = l + dl
     fc = if dl == 0 then c  + dc
@@ -215,9 +188,11 @@ rdrName2String r =
     Just n  -> name2String n
     Nothing ->
       case r of
-        GHC.Unqual _occ -> GHC.occNameString $ GHC.rdrNameOcc r
+        GHC.Unqual _occ       -> GHC.occNameString $ GHC.rdrNameOcc r
         GHC.Qual modname _occ -> GHC.moduleNameString modname ++ "."
                             ++ (GHC.occNameString $ GHC.rdrNameOcc r)
+        GHC.Orig _ _          -> error "GHC.Orig introduced after renaming"
+        GHC.Exact _           -> error "GHC.Exact introduced after renaming"
 
 name2String :: GHC.Name -> String
 name2String name = showGhc name
@@ -226,18 +201,6 @@ name2String name = showGhc name
 showGhc :: (GHC.Outputable a) => a -> String
 showGhc x = GHC.showPpr GHC.unsafeGlobalDynFlags x
 
-{-
--- |Show a GHC API structure
-showGhcDebug :: (GHC.Outputable a) => a -> String
-showGhcDebug x = GHC.showSDocDebug GHC.unsafeGlobalDynFlags (GHC.ppr x)
--}
--- ---------------------------------------------------------------------
-
--- ---------------------------------------------------------------------
-{-
-pp :: GHC.Outputable a => a -> String
-pp a = GHC.showPpr GHC.unsafeGlobalDynFlags a
--}
 -- ---------------------------------------------------------------------
 
 -- Based on ghc-syb-utils version, but adding the annotation
@@ -311,21 +274,3 @@ showSDoc_ :: GHC.SDoc -> String
 showSDoc_ = GHC.showSDoc GHC.unsafeGlobalDynFlags
 
 -- ---------------------------------------------------------------------
--- Putting these here for the time being, to avoid import loops
-
-ghead :: String -> [a] -> a
-ghead  info []    = error $ "ghead "++info++" []"
-ghead _info (h:_) = h
-
-glast :: String -> [a] -> a
-glast  info []    = error $ "glast " ++ info ++ " []"
-glast _info h     = last h
-
-gtail :: String -> [a] -> [a]
-gtail  info []   = error $ "gtail " ++ info ++ " []"
-gtail _info h    = tail h
-
-gfromJust :: [Char] -> Maybe a -> a
-gfromJust _info (Just h) = h
-gfromJust  info Nothing = error $ "gfromJust " ++ info ++ " Nothing"
-

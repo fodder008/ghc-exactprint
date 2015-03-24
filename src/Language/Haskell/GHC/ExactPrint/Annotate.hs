@@ -32,8 +32,6 @@ import qualified GHC            as GHC
 import qualified Outputable     as GHC
 import qualified SrcLoc         as GHC
 
-import Debug.Trace
-
 
 import Control.Monad.Trans.Free
 import Control.Monad.Free.TH (makeFreeCon)
@@ -233,6 +231,12 @@ instance (GHC.DataId name,Annotate name)
           mark GHC.AnnModule
           markExternal lm GHC.AnnVal (GHC.moduleNameString mn)
 
+        -- Only used in Haddock mode so we can ignore them.
+        (GHC.IEGroup _ _) -> return ()
+
+        (GHC.IEDoc _)     -> return ()
+
+        (GHC.IEDocNamed _)    -> return ()
 
 -- ---------------------------------------------------------------------
 
@@ -677,7 +681,9 @@ instance (GHC.DataId name,GHC.OutputableBndr name,Annotate name) =>
     mark GHC.AnnOpenC  -- '{'
     mark GHC.AnnCloseC -- '}'
 
-    return ()
+  -- Introduced after renaming.
+  markAST _ (GHC.AbsBinds _ _ _ _ _) = return ()
+
 
 -- ---------------------------------------------------------------------
 
@@ -1525,6 +1531,8 @@ instance (GHC.DataId name,GHC.OutputableBndr name,Annotate name)
     mapM_ markLocated ds
     mark GHC.AnnCloseC
     markWithString GHC.AnnClose "|]"
+  -- Introduced after the renamer
+  markAST _ (GHC.HsBracket (GHC.DecBrG _)) = return ()
   markAST _ (GHC.HsBracket (GHC.ExpBr e)) = do
     markWithString GHC.AnnOpen "[|"
     markLocated e
