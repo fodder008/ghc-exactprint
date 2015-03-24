@@ -21,7 +21,7 @@ module Language.Haskell.GHC.ExactPrint.Print
         ) where
 
 import Language.Haskell.GHC.ExactPrint.Types
-import Language.Haskell.GHC.ExactPrint.Utils ( debug, undelta, isGoodDelta, showGhc, )
+import Language.Haskell.GHC.ExactPrint.Utils ( debug, undelta, isGoodDelta, showGhc)
 import Language.Haskell.GHC.ExactPrint.Annotate
   (AnnotationF(..), Annotated, Annotate(..), markLocated)
 import Language.Haskell.GHC.ExactPrint.Lookup (keywordToString)
@@ -67,7 +67,7 @@ data EPState = EPState
              }
 
 data EPStack = EPStack
-             {  epLHS      :: Int -- ^ Marks the column of the LHS of the i
+             {  epLHS      :: Col -- ^ Marks the column of the LHS of the
                                   --   current layout block
              }
 

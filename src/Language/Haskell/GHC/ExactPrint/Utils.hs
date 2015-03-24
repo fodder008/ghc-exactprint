@@ -6,7 +6,7 @@
 module Language.Haskell.GHC.ExactPrint.Utils
   (
 
-  srcSpanStartLine
+    srcSpanStartLine
   , srcSpanEndLine
   , srcSpanStartColumn
   , srcSpanEndColumn

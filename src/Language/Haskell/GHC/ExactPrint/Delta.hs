@@ -68,7 +68,7 @@ data DeltaStack = DeltaStack
                  -- debugging
                , annConName :: AnnConName
                  -- | Start column of the current layout block
-               , layoutStart :: Int
+               , layoutStart :: Col
                }
 
 initialDeltaStack :: DeltaStack
@@ -241,6 +241,7 @@ withAST lss@(GHC.L ss _) layout action = do
                         NoLayoutRules -> id
   (whenLayout .  withSrcSpanDelta lss) (do
 
+    -- maskWriter only allows the finalAnns through
     let maskWriter s = s { annKds = []
                          , propOffset = First Nothing }
 
