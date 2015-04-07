@@ -318,10 +318,11 @@ fixBugsInAst anns t = (anns',t')
     (t',anns') = runState f anns
 
     -- Note: bottom up
-    f = SYB.everywhereM (-- SYB.mkM parStmtBlock
-                        -- `SYB.extM` parStmt
-                        SYB.mkM parStmt
-                        `SYB.extM` hsKind) t
+    f = SYB.everywhereM (SYB.mkM parStmtBlock
+                        `SYB.extM` parStmt
+                        -- SYB.mkM parStmt
+                        `SYB.extM` hsKind
+                        ) t
 
     -- ---------------------------------
 
@@ -360,15 +361,12 @@ fixBugsInAst anns t = (anns',t')
     parStmt :: GHC.Located (GHC.StmtLR GHC.RdrName GHC.RdrName (GHC.GenLocated GHC.SrcSpan (GHC.HsExpr GHC.RdrName)))
         -> FB (GHC.Located (GHC.StmtLR GHC.RdrName GHC.RdrName (GHC.GenLocated GHC.SrcSpan (GHC.HsExpr GHC.RdrName))))
     parStmt ps@(GHC.L _(GHC.ParStmt [] _ _)) = return ps
-    {-
     parStmt (GHC.L _ ps@(GHC.ParStmt pbs _ _)) = do -- #10207
       let ss = GHC.combineSrcSpans (parStmtBlockSpan $ head pbs) (parStmtBlockSpan $ last pbs)
       return (GHC.L ss ps)
-    
     parStmt (GHC.L ss ast@GHC.TransStmt{..}) = -- #10214
       let ss' = GHC.combineLocs (head trS_stmts) trS_using in
         changeAnnSpan ss ss' >> return (GHC.L ss' ast)
-    -}
     parStmt x = return x
 
     -- ---------------------------------

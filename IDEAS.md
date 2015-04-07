@@ -11,4 +11,18 @@
 
 ## For GHC 7.12
 
-Make sure that all names are located, so e.g. HsTyVar will take a Located name
+### Make sure that all names are located, so e.g. HsTyVar will take a Located name
+
+### Get rid of AnnList by capturing layout lists explicitly in the AST.
+
+These occur at
+
+  MatchGroup
+  HsDo
+  HsCmdDo
+  HsLocalBinds
+  - HsLet
+  - LetStmt
+  - HsCmdLet
+  - GRHSs
+  
