@@ -362,6 +362,9 @@ tt = formatTT =<< partition snd <$> sequence [ return ("", True)
     -- , manipulateAstTestWFname "RSA.hs"             "Main"
     -- , manipulateAstTestWFname "CExpected.hs"                "CExpected"
     -- , manipulateAstTestWFname "C.hs"                        "C"
+    , manipulateAstTestWFname "AssociatedType.hs"           "Main"
+    , manipulateAstTestWFname "GADTRecords.hs"              "GADTRecords"
+    , manipulateAstTestWFname "GADTRecords2.hs"             "GADTRecords2"
     -- , manipulateAstTestWFnameMod changeCifToCase  "C.hs"    "C"
     -- , manipulateAstTestWFname "WhereIn3.hs"                 "WhereIn3"
     --, manipulateAstTestWFnameMod changeWhereIn3 "WhereIn3.hs"    "WhereIn3"
@@ -378,9 +381,15 @@ tt = formatTT =<< partition snd <$> sequence [ return ("", True)
     -- , manipulateAstTestWFname "ParensAroundContext.hs"   "ParensAroundContext"
     -- , manipulateAstTestWFname "MultipleInferredContexts.hs"   "Main"
     -- , manipulateAstTestWFname "ArgPuncParens.hs"   "Main"
-    , manipulateAstTestWFname "SimpleComplexTuple.hs" "Main"
+    -- , manipulateAstTestWFname "SimpleComplexTuple.hs" "Main"
 
-    , manipulateAstTestWFname "GHCOrig.hs" "GHC.Tuple"
+    -- , manipulateAstTestWFname "MultiLineCommentWithPragmas.hs" "Main"
+    -- , manipulateAstTestWFname "DoubleForall.hs"                "Main"
+    -- , manipulateAstTestWFname "PuncFunctions.hs"               "Main"
+    -- , manipulateAstTestWFname "TupleSections.hs"               "Main"
+    -- , manipulateAstTestWFname "Undefined2.hs"               "Control.Monad.Safe"
+    -- , manipulateAstTestWFname "Undefined.hs"               "Main"
+    -- , manipulateAstTestWFname "T5951.hs"                   "T5951"
     {-
     , manipulateAstTestWFname "Cpp.hs"                   "Main"
     , manipulateAstTestWFname "Lhs.lhs"                  "Main"
@@ -477,19 +486,19 @@ changeCifToCase ans p = (ans',p')
       -- let ifSpanEntry = gfromJust "Case.ifSpanEntry" $ lookup AnnSpanEntry (annsDP annIf)
       let ifSpanEntry = annEntryDelta annIf
       let anne2' =
-            [ ( AnnKey caseLoc       (CN "HsCase"),   annIf { annsDP = [ (AnnSpanEntry,ifSpanEntry),(G GHC.AnnCase, ifDelta)
-                                                                     , (G GHC.AnnOf,     DP (0,1))
-                                                                     ,(AnnList caseVirtualLoc,DP (0,0))] } )
-            , ( AnnKey caseVirtualLoc (CN "(:)"),     Ann (DP (1,newCol)) (ColDelta newCol) (DP (1,newCol)) [] [(AnnSpanEntry,DP (1,0))])
+            [ ( AnnKey caseLoc       (CN "HsCase"),   annIf { annsDP = [(G GHC.AnnCase, ifDelta)
+                                                                       ,(G GHC.AnnOf,   DP (0,1))
+                                                                       ,(AnnList caseVirtualLoc,DP (0,0))] } )
+            , ( AnnKey caseVirtualLoc (CN "(:)"),     Ann (DP (1,0)) (ColDelta newCol) (DP (1,0)) [] [])
             , ( AnnKey trueMatchLoc  (CN "Match"),    Ann (DP (0,0)) 0 (DP (0,0)) [] [] )
             , ( AnnKey trueLoc1      (CN "ConPatIn"), Ann (DP (0,0)) 0 (DP (0,0)) [] [] )
             , ( AnnKey trueLoc       (CN "Unqual"),   Ann (DP (0,0)) 0 (DP (0,0)) [] [(G GHC.AnnVal, DP (0,0))] )
-            , ( AnnKey trueRhsLoc    (CN "GRHS"),     Ann (DP (0,2)) 6 (DP (0,0)) [] [(AnnSpanEntry,DP (0,2)),(G GHC.AnnRarrow, DP (0,0))] )
+            , ( AnnKey trueRhsLoc    (CN "GRHS"),     Ann (DP (0,2)) 6 (DP (0,2)) [] [(G GHC.AnnRarrow, DP (0,0))] )
 
-            , ( AnnKey falseMatchLoc (CN "Match"),    Ann (DP (1,0)) 0 (DP (0,0)) []  [(AnnSpanEntry,DP (1,0))] )
+            , ( AnnKey falseMatchLoc (CN "Match"),    Ann (DP (1,0)) 0 (DP (0,0)) []  [] )
             , ( AnnKey falseLoc1     (CN "ConPatIn"), Ann (DP (0,0)) 0 (DP (0,0)) []  [] )
-            , ( AnnKey falseLoc      (CN "Unqual"),   Ann (DP (0,0)) 0 (DP (0,0)) []  [ (G GHC.AnnVal, DP (0,0))] )
-            , ( AnnKey falseRhsLoc   (CN "GRHS"),     Ann (DP (0,1)) 6 (DP (0,0)) []  [(AnnSpanEntry,DP (0,1)),(G GHC.AnnRarrow, DP (0,0))] )
+            , ( AnnKey falseLoc      (CN "Unqual"),   Ann (DP (0,0)) 0 (DP (0,0)) []  [(G GHC.AnnVal, DP (0,0))] )
+            , ( AnnKey falseRhsLoc   (CN "GRHS"),     Ann (DP (0,1)) 6 (DP (0,1)) []  [(G GHC.AnnRarrow, DP (0,0))] )
             ]
 
       let annThen' = adjustAnnOffset (ColDelta 6) annThen

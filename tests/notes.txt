@@ -6,11 +6,12 @@ PatternGuards : GHC D818
 TemplateHaskell.hs 1 : Trac #10268
 
 TypeBrackets : Trac #10255 D823
+
 SlidingDoClause : Semi allowed in if stmt, need to only take it if inside the span
 
 LiftedConstructors : Trac #10268
 
-PuncFunctions : Trac #10268
+PuncFunctions : Trac #10269 / D832
 
 TypeSynParens : Fix in Annotate.hs
 
@@ -33,7 +34,25 @@ SlidingListComp : The AnnVbar in GRHS is capturing the annotation that belongs i
 
 MultiImplicitParams : IPBinds provides its dbinds in reverse order. Fix in ghc-exactprint
 
+UnicodeSyntaxFailure : workaround for the unicode.
 
+See https://github.com/ghc/ghc/blob/master/compiler/parser/Lexer.x#L813
+
+If Unicode is enabled, those tokens, which are normally >1 char long, are now 1
+char long. We can use that to decide which string to output, pick it up in Delta
+and modify our anns to include the string.
+
+MultiLineCommentWithPragmas : Lexer.x problem with nested #-}. Discards -} from it
+           D829
+
+TupleSections : AnnComma missing, issue in Parser
+           D834
+           
+DoubleForall : Annotation is added, but span is not in AST. Need to find the
+            place where nested HsForAllTy's get collapsed, that is where we lose the span.
+                #10278
+          one option is D833
+          
 GHC tickets still to be done
 ----------------------------
 
@@ -46,12 +65,13 @@ Needs work
 
 Undefined : BooleanFormula is not implemented.
 
-TupleSections : AnnComma missing, issue in Parser
+mkHsForAllTy discards parens
+  - look for all paren type processing and make sure it is safe.
+    GHC.HsPArrTy
+    GHC.HsParTy
+    GHC.ParPat
+    GHC.PArrPat
+    GHC.HsPar
+    GHC.ExplicitPArr
+    GHC.HsCmdPar
 
-MultiLineCommentWithPragmas : Lexer.x problem with nested #-}. Discards -} from it
-
-DoubleForall : Annotation is added, but span is not in AST. Need to find the
-            place where nested HsForAllTy's get collapsed, that is where we lose the span.
-
-
-UnicodeSyntaxFailure : policy decision. Defer until others are resolved.
